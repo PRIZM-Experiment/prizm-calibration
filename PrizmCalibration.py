@@ -1,11 +1,12 @@
 import numpy as np
 import prizmatoid as pzt
+import data as da
 import read_vna_csv as cs
-from scipy.interpolate import interp1d
+from scipy import interpolate
 from scipy import signal
 from scipy import ndimage
 import healpy as hp
-from pygdsm import GlobalSkyModel2016
+from pygsm2016 import GlobalSkyModel2016
 
 
 #ANALYSIS FUNCTIONS
@@ -46,8 +47,10 @@ def GSM_calibration_data(minperbin, flow, fhigh, antenna, pol):
 
     data_arrays=[]
     gsms = []
+    freq_bins = int((fhigh-flow)/2)+1
+    
     if antenna == 100 and pol == 'EW':
-        days = 25 #needs to be changed depending on how many good chunks of data there are
+        days = 19 #needs to be changed depending on how many good chunks of data there are
         gsm_arrays = []
         with np.load('2018_Good_Data/GSM_temps_100MHz_EW.npz') as temps:
             temp_name = 'T_'+ str(minperbin)
@@ -58,12 +61,11 @@ def GSM_calibration_data(minperbin, flow, fhigh, antenna, pol):
             with np.load('2018_Good_Data/100MHz_EW_2018.npz') as data:
                 data_name = 'power_'+str(i)
                 power = data[data_name]
-            with np.load('2018_Good_Data/100MHz_EW_2018_times.npz') as time:
+            with np.load('2018_Good_Data/100MHz_2018_times_EW.npz') as time:
                 time_name = 'time_'+str(i)
                 time = time[time_name]
             A = freq_binning(flow, fhigh, power)
             day_filtered = rfi_remove(A, 200, 20) 
-            freq_bins = int(((fhigh-flow)/2)+1)
             globals()['day%s' % i] = antenna_binning(minperbin, day_filtered,  time, freq_bins)
             globals()['Tgsm%s' % i] = GSM_add_zeros(Tgsm, globals()['day%s' % i], minperbin)
             data_arrays.append(globals()['day%s' % i])
@@ -81,8 +83,10 @@ def GSM_calibration_data(minperbin, flow, fhigh, antenna, pol):
                 for i in range(0, alldata.shape[0]):
                     if alldata[i,j,k] != 0:
                         tmp.append(alldata[i,j,k])
-                alldataavg[j,k] = np.nanmean(tmp)
+                if tmp:
+                    alldataavg[j,k] = np.nanmean(tmp)
                 tmp = []
+                    
         with open('100MHz_EW_antenna_average' +'.npy', 'wb') as f:
             np.save(f, alldataavg)
     
@@ -98,24 +102,74 @@ def GSM_calibration_data(minperbin, flow, fhigh, antenna, pol):
                         temp.append(allgsm[i,j,k])
                 allgsmavg[j,k] = np.nanmean(temp)
                 temp = []
+        
         start = int((flow-50)/2)
         end = 51-int((150-fhigh)/2)
         allgsmavg = allgsmavg[:, start:end]
+                    
         with open('100MHz_EW_GSM_average' +'.npy', 'wb') as f:
             np.save(f, allgsmavg)
             
     
+    if antenna == 100 and pol == 'NS':
+        days = 19 #needs to be changed depending on how many good chunks of data there are
+        gsm_arrays = []
+        with np.load('2018_Good_Data/GSM_temps_100MHz_NS.npz') as temps:
+            temp_name = 'T_'+ str(minperbin)
+            T = temps[temp_name]
+            Tgsm = align_GSMdata(minperbin, T)
+        
+        for i in range(1, days+1):
+            if i != 7 and i!= 9 and i!= 15 and i!= 16:
+                with np.load('2018_Good_Data/100MHz_NS_2018.npz') as data:
+                    data_name = 'power_'+str(i)
+                    power = data[data_name]
+                with np.load('2018_Good_Data/100MHz_2018_times_NS.npz') as time:
+                    time_name = 'time_'+str(i)
+                    time = time[time_name]
+                A = freq_binning(flow, fhigh, power)
+                day_filtered = rfi_remove(A, 200, 20) 
+                globals()['day%s' % i] = antenna_binning(minperbin, day_filtered,  time, freq_bins)
+                globals()['Tgsm%s' % i] = GSM_add_zeros(Tgsm, globals()['day%s' % i], minperbin)
+                data_arrays.append(globals()['day%s' % i])
+                gsms.append(globals()['Tgsm%s' % i])
     
+        alldata =  np.stack(data_arrays)
+        with open('100MHz_NS_antenna_allarrays' +'.npy', 'wb') as f:
+            np.save(f, alldata)
+
+        tmp = []
+        alldataavg = np.zeros((alldata.shape[1], alldata.shape[2]))
+
+        for j in range(0, alldata.shape[1]):
+            for k in range(0, alldata.shape[2]):
+                for i in range(0, alldata.shape[0]):
+                    if alldata[i,j,k] != 0:
+                        tmp.append(alldata[i,j,k])
+                if tmp:
+                    alldataavg[j,k] = np.nanmean(tmp)
+                tmp = []
+                    
+        with open('100MHz_NS_antenna_average' +'.npy', 'wb') as f:
+            np.save(f, alldataavg)
     
+        allgsm = np.stack(gsms)
+
+        temp = []
+        allgsmavg = np.zeros((allgsm.shape[1], allgsm.shape[2]))
+
+        for j in range(0, allgsm.shape[1]):
+            for k in range(0, allgsm.shape[2]):
+                for i in range(0, allgsm.shape[0]):
+                    if allgsm[i,j,k] != 0:
+                        temp.append(allgsm[i,j,k])
+                allgsmavg[j,k] = np.nanmean(temp)
+                temp = []
+                    
+        with open('100MHz_NS_GSM_average' +'.npy', 'wb') as f:
+            np.save(f, allgsmavg)
+            
     
-    
-  
-
-
-
-
-
-
 
 #FUNCTIONS FOR DATA RFI FLAGGING, BINNING AND SORTING
 
@@ -153,8 +207,6 @@ def freq_binning(low, high, dayshift):
 
 def align_GSMdata(minutes, GSMdata):
     bin1 = round(1440/minutes)
-    #I1 = 346
-    #I2 = 530
     I1 = int((360/720)*bin1)
     I2 = int((530/720)*bin1)
     TGSM = []
@@ -225,6 +277,108 @@ def antenna_binning(minperbin, data, totaltime, freq_bins):
 
 
 #FUNCTIONS TO CREATE GSM TEMP ARRAYS
+
+def healpy_beam(beam_dict, pol, healpy_nside=256, site_latitude=-46.88694):
+    """ Converts a beam simulation dictionary into HealPix format.
+
+    Given an input dictionary `beam_dict` containing the raw beam simulation and
+    associated spherical coordinates, generates a new dictionary is generated in
+    which the beam amplitudes and spherical coordinates are adapted to the
+    HealPix format with pixelization set by `healpy_nside`.
+
+    Args:
+        beam_dict: a dictionary containing a raw beam simulation.
+        healpy_nside: an integer specipying the HealPix pixelization.
+        site_latitude: the latitute of the instrument associated with the beam.
+
+    Returns:
+        A dictionary containing the sampled HealPix beam amplitudes and
+        associated spherical coordinates for each frequency channel (in MHz). A
+        typical output returned by this function would have the following
+        structure.
+
+        {
+        'theta': numpy.array,
+        'phi': numpy.array,
+        20: numpy.array,
+        22: numpy.array,
+        ...,
+        198: numpy.array,
+        200: numpy.array,
+        'normalization': numpy.array,
+        }
+    """
+
+    # Initializes the dictionary which will hold the HealPy version of the beam.
+    healpy_beam_dict = {}
+
+    # Extracts the frequencies for which beams are available in `beam_dict`.
+    frequencies = [key for key in beam_dict.keys() if isinstance(key, float)]
+    n_freq = len(frequencies)
+    
+    # Initializes a HealPy pixelization and associated spherical coordinates.
+    healpy_npix = hp.nside2npix(healpy_nside)
+    healpy_theta, healpy_phi = hp.pix2ang(healpy_nside,
+                                              np.arange(healpy_npix))
+
+    # Stores spherical coordinates in `healpy_beam_dict`.
+    healpy_beam_dict['theta'] = healpy_theta
+    healpy_beam_dict['phi'] = healpy_phi
+
+    # SciPy 2D interpolation forces us to do proceed in chunks of constant
+    # coordinate `healpy_theta`. Below we find the indices at which
+    # `healpy_theta` changes.
+    indices = np.where(np.diff(healpy_theta) != 0)[0]
+    indices = np.append(0, indices + 1)
+
+    # Initializes the NumPy array which will contain the normalization factor
+    # for each beam.
+    beam_norms = np.zeros(n_freq)
+
+    # Loops over the different frequencies for which the beam has been
+    # simulated.
+    for i, frequency in enumerate(frequencies):
+
+        # Computes the actual beam from the information contained in
+        # `beam_dict`.
+        beam = 10**(beam_dict[frequency]/10)
+
+        # Interpolates beam.
+        beam_interp = interpolate.interp2d(beam_dict['theta'],
+                                           beam_dict['phi'],
+                                           beam,
+                                           kind='cubic',
+                                           fill_value=0)
+
+        # Initializes `healpy_beam`, the HealPy version of the beam.
+        healpy_beam = np.zeros(len(healpy_theta))
+
+        # Constructs the HealPy beam.
+        for j in range(np.int(len(indices)/2) + 2):
+            start = indices[j]
+            end = indices[j+1]
+            healpy_beam[start:end] = beam_interp(healpy_theta[start],
+                                             healpy_phi[start:end])[:,0]
+
+        # Fills `beam_norms` with the appropriate normalization factors for
+        # each HealPy beam.
+        beam_norms[i] = np.sqrt(np.sum(healpy_beam**2))
+        
+        # Rotates and stores the the HealPy beam in the `healpy_beam_dict` under
+        # the appropriate frequency entry.
+        if pol == 'NS':
+            beam_rotation = hp.rotator.Rotator([0, 0, 90 - site_latitude])
+        if pol == 'EW':
+            beam_rotation = hp.rotator.Rotator([90, 0, 90 - site_latitude])
+        healpy_beam = beam_rotation.rotate_map_pixel(healpy_beam/beam_norms[i])
+        healpy_beam_dict[frequency] = healpy_beam
+
+    # Adds the beam normalizations as a separate entry in `heapy_beam_dict`.
+    healpy_beam_dict['normalization'] = beam_norms
+
+    # Returns the HealPy version of the beam in a dictionary format.
+    return healpy_beam_dict
+
 
 
 def save_GSM_maps(flow, fhigh):
@@ -328,156 +482,51 @@ def change_coord(m, coord):
     return m[..., new_pix]
 
 
-#FUNCTIONS TO CREATE 'GOOD' DATA PRODUCTS TO BE SAVED
 
-def run_data_noeff(prizm_data):
+
+
+
+
+#FUNCTIONS TO CREATE 'GOOD' DATA PRODUCTS TO BE SAVED -- SHOULD BE MOVED SOMEWHERE ELSE!
+        
+def run_data(prizm_data, antenna, polarization, eff = None):
     """ A bunch of functions put into one function to save space on Notebook """
-    
-
+        
     #makes the switch flags 
-
-    pzt.add_switch_flags(prizm_data, antennas=['100MHz'])
-    #pzt.add_temp_flags(prizm_data, antennas=['100MHz'])
-
+    da.add_switch_flags(prizm_data, instruments =[antenna], channels = [polarization])
+ 
 
     #finds the indices of each mode
-
-    select_antenna = (pzt.shrink_flag(prizm_data['100MHz']['switch_flags']['antenna.scio'], (1,1)) == 1)
-    #select_res100 = (pzt.shrink_flag(prizm_data['100MHz']['switch_flags']['res100.scio'], (1,1)) == 1)
-    #select_res50 = (pzt.shrink_flag(prizm_data['100MHz']['switch_flags']['res50.scio'], (1,1)) == 1)
-    select_short = (pzt.shrink_flag(prizm_data['100MHz']['switch_flags']['short.scio'], (1,1)) == 1)
-    #select_noise = (pzt.shrink_flag(prizm_data['100MHz']['switch_flags']['noise.scio'], (1,1)) == 1)
-    #select_temp = (prizm_data['100MHz']['temp_flags'] == 1)
-
+    select_antenna = pzt.shrink_flag(prizm_data[antenna][polarization]['Flags']['antenna'], (1,1))
+    
+    select_short = pzt.shrink_flag(prizm_data[antenna][polarization]['Flags']['short'], (1,1))
+    
+    #Gets data to simplify functions below
+    data = prizm_data[antenna][polarization]['pol']
 
 
     #finding the times
-
-    data_time = prizm_data['100MHz']['time_sys_start.raw'] - prizm_data['100MHz']['time_sys_start.raw'][0]
-    #therm_time_start = prizm_data['switch']['time_start_therms.raw'] - prizm_data['100MHz']['time_sys_start.raw'][0]
-    #therm_time_stop = prizm_data['switch']['time_stop_therms.raw'] - prizm_data['100MHz']['time_sys_start.raw'][0]
-
-    
-    #sorts the data into each type
-    
-    antenna_data_pol0 = prizm_data['100MHz']['pol0.scio'][select_antenna]
-    #res100_data_pol0 = prizm_data['100MHz']['pol0.scio'][select_res100]
-    #res50_data_pol0 = prizm_data['100MHz']['pol0.scio'][select_res50]
-    short_data_pol0 = prizm_data['100MHz']['pol0.scio'][select_short]
-    #noise_data_pol0 = prizm_data['100MHz']['pol0.scio'][select_noise]
-    antenna_data_pol1 = prizm_data['100MHz']['pol1.scio'][select_antenna]
-    #res100_data_pol1 = prizm_data['100MHz']['pol1.scio'][select_res100]
-    #res50_data_pol1 = prizm_data['100MHz']['pol1.scio'][select_res50]
-    short_data_pol1 = prizm_data['100MHz']['pol1.scio'][select_short]
-    #noise_data_pol1 = prizm_data['100MHz']['pol1.scio'][select_noise]
+    data_time = prizm_data[antenna][polarization]['time_sys_start'] - prizm_data[antenna][polarization]['time_sys_start'][0]
     
     
-    shorton=[i for i, x in enumerate(select_short) if x]
-    antennaon=[i for i, x in enumerate(select_antenna) if x]
+    short_ind=[i for i, x in enumerate(select_short) if x]
+    antenna_ind=[i for i, x in enumerate(select_antenna) if x]
     
-
-
-    #functions to find the times when the antenna is on and the values of the short corresponding with each
-
-    (antstart, antend) = find_antenna_times(antennaon)
-    (short0, short1) = find_short100(shorton, prizm_data, antend)
-
-    #short0 = pzt.interpolate_short(prizm_data, antenna='100MHz', polarization='pol0.scio')
-    #short1 = pzt.interpolate_short(prizm_data, antenna='100MHz', polarization='pol1.scio')
+    #shorten switch indices list to fit with data. THIS IS MY MAIN ISSUE/CONCERN
+    shorton = [x for x in short_ind if x <= data.shape[0]-1]
+    antennaon = [x for x in antenna_ind if x <= data.shape[0]-1]
     
+    #Interpolate short to get value at each antenna time. If this works, we no longer need "interpolate_short" or "find_short" or "find_antenna_times" function
+    short_vals = np.zeros((data[antennaon].shape[0], data[antennaon].shape[1]))
+    for j in range(0, data.shape[1]):
+        short_vals[:,j] = interpolate.interp1d(data_time[shorton], data[shorton, j], fill_value="extrapolate")(data_time[antennaon])
     
-
-    #calculate (power - short)/eff for each antenna chunk and then put all the chunks back together into an array
-
-    pmeas0=[]
-    pmeas1=[]
-
-    for i in range(len(antstart)):
-        pmeas0.append((prizm_data['100MHz']['pol0.scio'][antstart[i]:antend[i]+1,:])-short0[i])
-        pmeas1.append((prizm_data['100MHz']['pol1.scio'][antstart[i]:antend[i]+1,:])-short1[i])
-
-    p0 = np.concatenate(pmeas0, axis=0)
-    print(p0.shape)
-    p1 = np.concatenate(pmeas1, axis=0)
-    print(p1.shape)
+    if eff:
+        p = (data[antennaon] - short_vals)/(eff)
+    else:
+        p = data[antennaon] - short_vals
     
-    return p0, p1, select_antenna
-
-
-
-
-def run_data(prizm_data, eff0, eff1):
-    """ A bunch of functions put into one function to save space on Notebook """
-    
-
-    #makes the switch flags 
-
-    pzt.add_switch_flags(prizm_data, antennas=['100MHz'])
-    #pzt.add_temp_flags(prizm_data, antennas=['100MHz'])
-
-
-    #finds the indices of each mode
-
-    select_antenna = (pzt.shrink_flag(prizm_data['100MHz']['switch_flags']['antenna.scio'], (1,1)) == 1)
-    #select_res100 = (pzt.shrink_flag(prizm_data['100MHz']['switch_flags']['res100.scio'], (1,1)) == 1)
-    #select_res50 = (pzt.shrink_flag(prizm_data['100MHz']['switch_flags']['res50.scio'], (1,1)) == 1)
-    select_short = (pzt.shrink_flag(prizm_data['100MHz']['switch_flags']['short.scio'], (1,1)) == 1)
-    #select_noise = (pzt.shrink_flag(prizm_data['100MHz']['switch_flags']['noise.scio'], (1,1)) == 1)
-    #select_temp = (prizm_data['100MHz']['temp_flags'] == 1)
-
-
-
-    #finding the times
-
-    data_time = prizm_data['100MHz']['time_sys_start.raw'] - prizm_data['100MHz']['time_sys_start.raw'][0]
-    #therm_time_start = prizm_data['switch']['time_start_therms.raw'] - prizm_data['100MHz']['time_sys_start.raw'][0]
-    #therm_time_stop = prizm_data['switch']['time_stop_therms.raw'] - prizm_data['100MHz']['time_sys_start.raw'][0]
-
-    
-    #sorts the data into each type
-    
-    antenna_data_pol0 = prizm_data['100MHz']['pol0.scio'][select_antenna]
-    #res100_data_pol0 = prizm_data['100MHz']['pol0.scio'][select_res100]
-    #res50_data_pol0 = prizm_data['100MHz']['pol0.scio'][select_res50]
-    short_data_pol0 = prizm_data['100MHz']['pol0.scio'][select_short]
-    #noise_data_pol0 = prizm_data['100MHz']['pol0.scio'][select_noise]
-    antenna_data_pol1 = prizm_data['100MHz']['pol1.scio'][select_antenna]
-    #res100_data_pol1 = prizm_data['100MHz']['pol1.scio'][select_res100]
-    #res50_data_pol1 = prizm_data['100MHz']['pol1.scio'][select_res50]
-    short_data_pol1 = prizm_data['100MHz']['pol1.scio'][select_short]
-    #noise_data_pol1 = prizm_data['100MHz']['pol1.scio'][select_noise]
-    
-    
-    shorton=[i for i, x in enumerate(select_short) if x]
-    antennaon=[i for i, x in enumerate(select_antenna) if x]
-    
-
-
-    #functions to find the times when the antenna is on and the values of the short corresponding with each
-
-    (antstart, antend) = find_antenna_times(antennaon)
-    (short0, short1) = find_short100(shorton, prizm_data, antend)
-
-    #short0 = pzt.interpolate_short(prizm_data, antenna='100MHz', polarization='pol0.scio')
-    #short1 = pzt.interpolate_short(prizm_data, antenna='100MHz', polarization='pol1.scio')
-    
-    
-
-    #calculate (power - short)/eff for each antenna chunk and then put all the chunks back together into an array
-
-    pmeas0=[]
-    pmeas1=[]
-
-    for i in range(len(antstart)):
-        pmeas0.append(((prizm_data['100MHz']['pol0.scio'][antstart[i]:antend[i]+1,:])-short0[i])/(eff0))
-        pmeas1.append(((prizm_data['100MHz']['pol1.scio'][antstart[i]:antend[i]+1,:])-short1[i])/(eff1))
-
-    p0 = np.concatenate(pmeas0, axis=0)
-    print(p0.shape)
-    p1 = np.concatenate(pmeas1, axis=0)
-    print(p1.shape)
-    
-    return p0, p1, select_antenna
+    return p, antennaon
 
 
 
@@ -495,7 +544,7 @@ def find_efficiency1(ant_s11, xsmooth):
    
     #interpolate and smooth efficiency (to match frequencies used in data)
     sos = signal.butter(1, xsmooth, btype='lp', output='sos')
-    lin=interp1d(s11freqs, signal.sosfilt(sos, s11_eff), kind='slinear',fill_value="extrapolate")
+    lin=interpolate.interp1d(s11freqs, signal.sosfilt(sos, s11_eff), kind='slinear',fill_value="extrapolate")
     xnew= np.linspace(0,250000000, num = 4096, endpoint= True)
     eff=1-((lin(xnew))**2)
     
@@ -568,14 +617,14 @@ def find_efficiency2(ant_s11, frontend_s11, xsmooth):
    
     #interpolate and smooth gamma to match frequencies used in data
     sos = signal.butter(1, xsmooth, btype='lp', output='sos')
-    lingamma=interp1d(s11freqs, signal.sosfilt(sos, mag), kind='slinear',fill_value="extrapolate")
+    lingamma=interpolate.interp1d(s11freqs, signal.sosfilt(sos, mag), kind='slinear',fill_value="extrapolate")
     xnew= np.linspace(0,250000000, num = 4096, endpoint= True)
     eff=1-((lingamma(xnew))**2)
     
     return eff
 
 
-def find_short100(shorton, prizm_data, newlist_antend):
+def find_short(shorton, prizm_data, newlist_antend, antenna, polarization):
 
     somelist1 = shorton
     newlist_shortend = []
@@ -594,22 +643,16 @@ def find_short100(shorton, prizm_data, newlist_antend):
             newlist_shortstart.append(somelist1[i])
          
     newlist_shortstart.insert(0,somelist1[0])
+    
+    print(len(newlist_shortstart))
 
     short_lengths = list(np.array(newlist_shortend) - np.array(newlist_shortstart))
-    short0 = []
+    short = []
     for i in range(0, len(newlist_shortend)):
         sum = np.zeros(4096)
         for j in range(0, short_lengths[i]+1):
-            sum = sum + prizm_data['100MHz']['pol0.scio'][newlist_shortstart[i]+j]
-        short0.append(sum/(short_lengths[i]+1))
-
- 
-    short1 = []
-    for i in range(0, len(newlist_shortend)):
-        sum = np.zeros(4096)
-        for j in range(0, short_lengths[i]+1):
-            sum = sum + prizm_data['100MHz']['pol1.scio'][newlist_shortstart[i]+j]
-        short1.append(sum/(short_lengths[i]+1))
+            sum = sum + prizm_data[antenna][polarization][newlist_shortstart[i]+j]
+        short.append(sum/(short_lengths[i]+1))
      
        
     dif=[]
@@ -619,23 +662,15 @@ def find_short100(shorton, prizm_data, newlist_antend):
   
     for i in range(0, len(dif)):
         if dif[i] > base + base/2:
-            short0.insert(i+1, pzt.interpolate_short(prizm_data, antenna='100MHz', polarization='pol0.scio')[i]) 
-            short1.insert(i+1, pzt.interpolate_short(prizm_data, antenna='100MHz', polarization='pol1.scio')[i])
-
-    #if newlist_shortend[-1] < newlist_antend[-1]:
-        #newlist_shortend = newlist_shortend + newlist_shortend[-1:]
+            short.insert(i+1, pzt.interpolate_short(prizm_data, antenna, polarization)[i])
+ 
    
     if newlist_shortend[-1] < newlist_antend[-1]:
-        short0.append(pzt.interpolate_short(prizm_data, antenna='100MHz', polarization='pol0.scio')[-1]) 
-        short1.append(pzt.interpolate_short(prizm_data, antenna='100MHz', polarization='pol1.scio')[-1])
+        short.append(pzt.interpolate_short(prizm_data, antenna, polarization)[-1])
     
-    return short0, short1
     
-    #short_0=prizm_data['100MHz']['pol0.scio'][newlist_short]
-    #short_1=prizm_data['100MHz']['pol1.scio'][newlist_short]
+    return short
     
-   
-    #return short_0, short_1
 
 
 
@@ -646,8 +681,7 @@ def find_antenna_times(antennaon):
     for i in range(0, len(somelist)-1):
         if somelist[i+1] != somelist[i] + 1:
             newlist_antend.append(somelist[i])
-    #to get last number
-    #get out if last data is antenna
+    
     x=len(somelist)-1        
     newlist_antend.append(somelist[x])
     print('There are ' +str(len(newlist_antend))+ ' end times')
@@ -662,8 +696,6 @@ def find_antenna_times(antennaon):
         if somelist[i-1] != somelist[i] - 1:
             newlist_antstart.append(somelist[i])
    
-    #x=len(somelist)-1        
-    #newlist_antstart.append(somelist[x])
     
     print('There are ' +str(len(newlist_antstart))+ ' start times')
     print(newlist_antstart)
