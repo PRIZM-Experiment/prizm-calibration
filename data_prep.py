@@ -12,7 +12,7 @@ class DataPrep:
         self.shorts = self.get_shorts(self.data)
         self.lst = self.get_lst_time(self.data)
     
-    def __call__(self, calibration_type)
+    def __call__(self, calibration_type):
         return self.get_data_product(calibration_type), self.lst
 
     def prep_data(self):
