@@ -62,7 +62,7 @@ def GSM_calibration_data(minperbin, flow, fhigh, antenna, pol, year):
         
         A = freq_binning(flow, fhigh, power)
         day_filtered = rfi_remove(A, 200, 20)
-        day = antenna_binning(minperbin, day_filtered, time, freq_bins)
+        day = antenna_binning_new(minperbin, day_filtered, time, freq_bins)
         
         return Tgsm, day
             
@@ -134,6 +134,26 @@ def GSM_add_zeros(TGSM, data, minperbin):
                 GSM[i,j] = np.nan 
     return GSM
 
+
+def antenna_binning_new(minperbin, data, totaltime, freq_bins):
+
+    #convert LST to minutes in day
+    minutes = totaltime*1440/23.94
+    bins = int(1440/minperbin)
+    bin_num = np.zeros(len(minutes))
+    for i, minute in enumerate(minutes):
+        bin_num[i] = np.floor(minute/minperbin)
+    freq_list = [i for i in range(0, freq_bins)]
+        
+    binned = np.zeros((bins, freq_bins))
+    for j in range(0, bins):
+        cond = bin_num == j
+        mesh = np.ix_(cond, freq_list)
+        correct_data = data[mesh] 
+        binned[j,:] = np.sum(correct_data, axis=0)/len(correct_data)
+    binned[np.isnan(binned)] = 0
+    
+    return binned
 
 
 def antenna_binning(minperbin, data, totaltime, freq_bins):

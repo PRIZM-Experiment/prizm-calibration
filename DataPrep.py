@@ -1,22 +1,21 @@
 from data import Data
 
+
 class DataPrep:
-    
-    def __init__(self, instrument, channel, year, calibration_type):
+
+    def __init__(self, instrument, channel, year):
         self.instrument = instrument
         self.channel = channel
         self.year = year
-        self.data = self.prep_data(instrument=self.instrument, channel=self.channel, year=self.year)
+        self.data = self.prep_data()
         self.antenna = self.get_antenna_data(self.data)
         self.shorts = self.get_shorts(self.data)
         self.lst = self.get_lst_time(self.data)
     
     def __call__(self, calibration_type)
-        return self.get_data_product(calibration_type)
-        
-    @staticmethod
-    def prep_data(instrument, channel, year):
-    
+        return self.get_data_product(calibration_type), self.lst
+
+    def prep_data(self):
         selections = {'100MHz':{'EW': {'2018': './selections/2018_100MHz_EW_Prototyping.p', 
                                    '2021': './selections/2021_100MHz_EW_Partial.p'}, 
                                 'NS': {'2018': './selections/2018_100MHz_NS.p', 
@@ -28,42 +27,33 @@ class DataPrep:
                                   '2021': './selections/2021_70MHz_NS_Partial.p'}
                               }
                      }
-    
-        data = Data.via_metadatabase(selection = selections[instrument][channel][year])
-        
-        data.partition(instruments=[instrument], channels=[channel], buffer=(1,1))
-        
-        data.lst(instruments=[instrument], channels=[channel])
-        
+        data = Data.via_metadatabase(selection = selections[self.instrument][self.channel][self.year])
+        data.partition(instruments=[self.instrument], channels=[self.channel], buffer=(1,1))
+        data.lst(instruments=[self.instrument], channels=[self.channel])
         return data
-    
-    
+
     def get_antenna_data(self, data):
-        
         return data.get(data='pol', instrument=self.instrument, channel=self.channel, partition='antenna')
-    
-    
+
     def get_shorts(self, data):
-        
-        return data.interpolate(times=data.get(data='time_sys_start', instrument=self.instrument, channel=self.channel, partition='antenna'), instrument=self.instrument, channel=self.channel, partition='short', threshold=5000)
-    
-    
+        return data.interpolate(times=data.get(data='time_sys_start',
+                                               instrument=self.instrument,
+                                               channel=self.channel,
+                                               partition='antenna'),
+                                instrument=self.instrument,
+                                channel=self.channel,
+                                partition='short', threshold=5000)
+
     def get_lst_time(self, data):
-        
-        return data.get(data = 'lst_sys_start', instrument=instrument, channel=channel, partition='antenna')
-    
-    
-    def prep_gsmcal_data(self):
-        
+        return data.get(data='lst_sys_start', instrument=self.instrument, channel=self.channel, partition='antenna')
+
+    def prep_gsm_cal_data(self):
         return self.antenna - self.shorts
-    
-    
+
     def get_data_product(self, calibration_type):
-        
-        calibrations = {'GSM': self.prep_gsmcal_data()}
-        
-        return calibrations[calibration_type]
-        
-        
-        
-  
+        if calibration_type == 'GSM':
+            calibration_data = self.prep_gsm_cal_data()
+        else:
+            calibration_data = None
+        return calibration_data
+
