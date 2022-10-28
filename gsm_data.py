@@ -1,16 +1,15 @@
 import numpy as np
 import healpy
 import scipy
-from pygsm2016 import GlobalSkyModel2016
+from pygsm.pygsm2016 import GlobalSkyModel2016
 
 
 class GSMData:
 
-    def __init__(self, channel, min_per_bin, flow, fhigh, nside=256):
+    def __init__(self, instrument, channel, min_per_bin, nside=256):
         self.min_per_bin = min_per_bin
+        self.instrument = instrument
         self.channel = channel
-        self.flow = flow
-        self.fhigh = fhigh
         self.nside = nside
         self.beam_dict = self.get_beam_dict()
         self.healpy_beam = self.get_healpy_beam()
@@ -18,40 +17,17 @@ class GSMData:
 
     def __call__(self):
         self.get_GSM_temps().align_GSMdata()
+        self.save_GSM_data()
         return self.gsm_data
 
-    @staticmethod
-    def get_beam_dict(dir_parent='/Users/kellyforan/Documents/Prizm/Data/beam_100MHz',
-                      file_name='results_pattern_100mhz_total90.dat'):
-        """ Reads a beam simulation file for a given PRIZM antenna.
-
-        Looks for files with the given `file_name` under the input parent directory
-        `dir_parent`. If the file has been located in the provided directory, the
-        function attempts to read it. In case the file cannot be found and/or read,
-        an error message is printed. Successfully read files are stored and returned
-        in a dictionary format.
-
-        Args:
-        dir_parent = a string containing the top level directory where the file
-            is stored.
-        file_name: a string specifying the beam simulation file for the antenna
-            of interest.
-
-        Returns:
-            A dictionary containing the sampled beam amplitudes and associated
-            spherical coordinates for each frequency channel (in MHz). A typical
-            output returned by this function would have the following structure.
-
-        {
-        'theta': numpy.array,
-        'phi': numpy.array,
-        20: numpy.array,
-        22: numpy.array,
-        ...,
-        198: numpy.array,
-        200: numpy.array,
-        }
-        """
+    def get_beam_dict(self):
+       
+        dir_parent='./Beams'
+        if self.instrument == '100MHz':
+            file_name='results_pattern_100mhz_total90.dat'
+        
+        if self.instrument == '70MHz':
+            file_name='results_pattern_70mhz_total90.dat'
 
         # Initializes the dictionary which will hold the beam information.
         beam_dict = {}
@@ -208,9 +184,9 @@ class GSMData:
 
     def get_GSM_temps(self, saved_maps=True):
         temperatures1 = []
-        for i in range(self.flow, self.fhigh + 2, 2):
+        for i in range(30, 202, 2):
             if saved_maps:
-                gsm_map_lowres = np.load(f'./gsm_{i}')
+                gsm_map_lowres = np.load(f'./gsm_maps/gsm_{i}.npy')
             else:
                 gsm_2016 = GlobalSkyModel2016(freq_unit='MHz')
                 gsm_map = gsm_2016.generate(i)
@@ -266,12 +242,22 @@ class GSMData:
             TGSM.append(T2)
         self.gsm_data = np.array(TGSM)
         return self
+    
+    def save_GSM_data(self):
+        np.save(f'./GSM_averages/{self.instrument}_{self.channel}_GSM_average_{self.min_per_bin}min', self.gsm_data)
 
     def save_GSM_maps(self):
         gsm_2016 = GlobalSkyModel2016(freq_unit='MHz')
 
-        for i in range(self.flow, self.fhigh + 2, 2):
+        for i in range(30, 202, 2):
             gsm_map = gsm_2016.generate(i)
             gsm_map_eq = self.change_coord(gsm_map, ['G', 'C'])
             gsm_map_lowres = healpy.ud_grade(gsm_map_eq, 256, order_in='RING', order_out='RING')
             np.save(f'gsm_{i}', gsm_map_lowres)
+
+            
+def get_desired_frequencies(Tgsm, flow, fhigh):
+    start = int((flow-30)/2)
+    end = int((fhigh-flow)/2) + start +1
+    return Tgsm[:, start:end]
+    
