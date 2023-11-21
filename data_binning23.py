@@ -19,6 +19,7 @@ class DataBinning:
         bin_inds = np.digitize(self.lst, bins=bins) 
 
         lst_binned = (bins - binsize/2)[np.min(bin_inds):np.max(bin_inds)+1]
+	bin_inds -= np.min(bin_inds)
         data_binned = np.zeros((len(lst_binned), self.data.shape[1]))
         if method == 'median':
             for i in range(np.min(bin_inds),np.max(bin_inds)+1):
