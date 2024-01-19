@@ -1,12 +1,12 @@
 import numpy as np
-import prizmatoid as pzt
+#import prizmatoid as pzt
 import data as da
-import read_vna_csv as cs
+#import read_vna_csv as cs
 from scipy import interpolate
 from scipy import signal
 from scipy import ndimage
 import healpy as hp
-from pygsm2016 import GlobalSkyModel2016
+from pygsm.pygsm2016 import GlobalSkyModel2016
 
 
 #ANALYSIS FUNCTIONS
