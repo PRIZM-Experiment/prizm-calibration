@@ -1,1 +1,3 @@
 Just a small test file. Will delete later.
+
+Adding a modification to my test file! Used to test new repository clone on local machine.
