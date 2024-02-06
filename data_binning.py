@@ -19,7 +19,7 @@ class RFI_flagging:
         flow = f2i(highpass, flow=0, fhigh=250, num_inds=4096)
         fhigh = f2i(lowpass, flow=0, fhigh=250, num_inds=4096)
         self.data = self.data[:, flow:fhigh]
-        self.freq = self.freq[:, flow:fhigh]
+        self.freq = self.freq[flow:fhigh]
 
     def rfi_remove(self, binsize, threshold):
         lst_binned, data_binned, bin_inds = lst_binning(self.data, self.lst, binsize, method='median')
