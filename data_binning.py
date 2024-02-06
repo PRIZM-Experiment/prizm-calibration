@@ -32,7 +32,7 @@ class RFI_flagging:
 
     def discard_bad_spectra(self):
         mask_rate_per_spectra = np.sum(np.isnan(self.data[:, f2i(50):]), axis=1)
-        self.data[mask_rate_per_spectra > 0.2 * len(self.freq()[f2i(50):])] = np.nan
+        self.data[mask_rate_per_spectra > 0.2 * len(self.freq[f2i(50):])] = np.nan
     
     def discard_bad_days(self):
         days = split_days(self.lst)
