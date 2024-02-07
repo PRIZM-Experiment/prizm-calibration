@@ -1,8 +1,8 @@
 import sys
 import numpy as np
 
-mdb_default = '/scratch/s/sievers/nasuyu/prizm-data-wrangling/prizmdatawrangling'
-
+# mdb_default = '/scratch/s/sievers/nasuyu/prizm-data-wrangling/prizmdatawrangling'
+mdb_default = '/home/s/sievers/lauriea/prizm-analysis'
 
 class DataLoader():
     def __init__(self, freq, chan, data_path, mdb_path=mdb_default,):
