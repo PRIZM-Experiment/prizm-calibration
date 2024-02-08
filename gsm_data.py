@@ -125,7 +125,7 @@ class GSMData:
             healpy_beam = np.zeros(len(healpy_theta))
 
             # Constructs the HealPy beam.
-            for j in range(np.int(len(indices) / 2) + 2):
+            for j in range(int(len(indices) / 2) + 2):
                 start = indices[j]
                 end = indices[j + 1]
                 healpy_beam[start:end] = beam_interp(healpy_theta[start],
@@ -198,7 +198,7 @@ class GSMData:
             temp_map = np.full(gsm_map_lowres.size, 1)
             alm_temp_map = healpy.map2alm(temp_map)
             integral_beam0 = np.real(np.sum(alm_temp_map * alm_BEAM))
-            lmax = np.int(np.round(np.sqrt(2 * len(alm_BEAM) - 0.5)))
+            lmax = int(np.round(np.sqrt(2 * len(alm_BEAM) - 0.5)))
             m = np.zeros(len(alm_BEAM))
 
             icur = 0
@@ -207,7 +207,7 @@ class GSMData:
                 m[icur:icur + nn] = i
                 icur = icur + nn
 
-            phi_rot1 = np.linspace(0, 2 * np.pi, (1440 / self.min_per_bin) + 1)
+            phi_rot1 = np.linspace(0, 2 * np.pi, int((1440 / self.min_per_bin) + 1))
             phitmp = phi_rot1.tolist()
             phitmp.pop()
             phi_rot1 = np.array(phitmp)
