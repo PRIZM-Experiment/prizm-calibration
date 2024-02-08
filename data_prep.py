@@ -1,17 +1,11 @@
 import sys
-# data.py in prizm-analysis repository gives errors. 
-# use data.py in prizm-data-wrangling repository.
-sys.path.insert(0, '../prizm-data-wrangling/prizmdatawrangling/')
 from data import Data
 
-path2selects = '/scratch/s/sievers/nasuyu/prizm-data-wrangling/'
-
 class DataPrep:
-    def __init__(self, instrument, channel, year, path2selects=path2selects):
+    def __init__(self, instrument, channel, year):
         self.instrument = instrument
         self.channel = channel
         self.year = year
-        self.path2selects = path2selects
         self.data = self.prep_data()
         self.antenna = self.get_antenna_data(self.data)
         self.shorts = self.get_shorts(self.data)
@@ -22,15 +16,15 @@ class DataPrep:
         return self.get_data_product(calibration_type), self.lst, self.systime
 
     def prep_data(self):
-        selections = {'100MHz':{'EW': {'2018': self.path2selects + 'selections/2018_100MHz_EW.p', 
-                                   '2021': self.path2selects + 'selections/2021_100MHz_EW_Partial.p'}, 
-                                'NS': {'2018': self.path2selects + 'selections/2018_100MHz_NS.p', 
-                                   '2021': self.path2selects + 'selections/2021_100MHz_NS_Partial.p'}
+        selections = {'100MHz':{'EW': {'2018': './selections/2018_100MHz_EW.p', 
+                                   '2021': './selections/2021_100MHz_EW_Partial.p'}, 
+                                'NS': {'2018': './selections/2018_100MHz_NS.p', 
+                                   '2021': './selections/2021_100MHz_NS_Partial.p'}
                                }, 
-                      '70MHz':{'EW': {'2018': self.path2selects + 'selections/2018_70MHz_EW_Partial.p', 
-                                  '2021': self.path2selects + 'selections/2021_70MHz_EW_Partial.p'}, 
-                               'NS': {'2018': self.path2selects + 'selections/2018_70MHz_NS_Partial.p', 
-                                  '2021': self.path2selects + 'selections/2021_70MHz_NS_Partial.p'}
+                      '70MHz':{'EW': {'2018': './selections/2018_70MHz_EW_Partial.p', 
+                                  '2021': './selections/2021_70MHz_EW_Partial.p'}, 
+                               'NS': {'2018': './selections/2018_70MHz_NS_Partial.p', 
+                                  '2021': './selections/2021_70MHz_NS_Partial.p'}
                               }
                      }
         data = Data.via_metadatabase(selection = selections[self.instrument][self.channel][self.year])
