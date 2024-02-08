@@ -6,7 +6,7 @@ PRIZM-Analysis
 This repository is under development.
 
 **Setup:**
-Create a local copy of sample_settings.json with your local parent directories. Name your copy settings.json.
+Create a local copy of sample_settings.json with your local parent directories. Name your copy settings.json
 
 Features
 --------
