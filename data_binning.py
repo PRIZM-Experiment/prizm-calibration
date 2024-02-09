@@ -1,59 +1,76 @@
 import numpy as np
-from scipy import ndimage
+from scipy.signal import find_peaks
+from scipy.ndimage import median_filter
 
-
-class DataBinning:
-
-    def __init__(self, data_product, times, min_per_bin, freq_low, freq_high):
+class RFI_flagging:
+    def __init__(self, data_product, lst_times):
         self.data = data_product
-        self.times = times
-        self.min_per_bin = min_per_bin
-        self.flow = freq_low
-        self.fhigh = freq_high
+        self.lst = lst_times
+        self.freq = np.linspace(0, 250, 4096)
+    
+    def __call__(self, hpass=30, lpass=200, binsize1=10, binsize2=5, thresh1=4, thresh2=3, discard=True):
+        self.truncate(hpass, lpass)
+        self.rfi_remove(binsize1, thresh1)
+        self.discard_bad_spectra()
+        self.rfi_remove(binsize2, thresh2)
+        self.discard_bad_spectra()
 
-    def __call__(self, threshold=200, median_filter_window=20):
-        self.freq_binning()
-        self.rfi_remove(threshold, median_filter_window)
-        binned_data = self.antenna_binning()
-        return binned_data
+    def truncate(self, highpass, lowpass):
+        flow = f2i(highpass, flow=0, fhigh=250, num_inds=4096)
+        fhigh = f2i(lowpass, flow=0, fhigh=250, num_inds=4096)
+        self.data = self.data[:, flow:fhigh]
+        self.freq = self.freq[flow:fhigh]
 
-    def freq_binning(self):
-        """ Sorts the antenna data into frequency bins matching the GSM (usually 2MHz) and cuts out
-        frequencies that are higher or lower than GSM """
-        freqlow = [int(4096*j/250) for j in range(self.flow - 1, self.fhigh + 1, 2)]
-        freqhigh = [int(4096*j/250) for j in range(self.flow + 1, self.fhigh + 3, 2)]
-        a = []
-        for k in range(0, int((self.fhigh - self.flow) / 2) + 1):
-            a.append(np.sum(self.data[:, freqlow[k]:freqhigh[k]], axis=1) / (freqhigh[k] - freqlow[k]))
-        self.data = np.array(a).T
-        return self.data
+    def rfi_remove(self, binsize, threshold):
+        lst_binned, data_binned, bin_inds = lst_binning(self.data, self.lst, binsize, method='median')
+        data_binned = median_filter(data_binned, size=(1,8))
+        MAD = np.array([np.nanmedian(np.abs(data_binned[i] - self.data[bin_inds==i]), \
+                                                   axis=0) for i in range(len(lst_binned))])
+        MAD = median_filter(MAD, size=(1,80))
+        x = (np.abs(self.data - data_binned[bin_inds]) > threshold * MAD[bin_inds])
+        self.data[x] = np.nan
 
-    def rfi_remove(self, threshold, median_filter_window):
-        """ Removes RFI data from the antenna data """
+    def discard_bad_spectra(self):
+        mask_rate_per_spectra = np.sum(np.isnan(self.data[:, f2i(50):]), axis=1)
+        self.data[mask_rate_per_spectra > 0.2 * len(self.freq[f2i(50):])] = np.nan
+    
+    def discard_bad_days(self):
+        days = split_days(self.lst)
+        mask_rate_per_day = [np.sum(np.isnan(self.data[days[i]:days[i+1]])) / 
+                             ((days[i+1] -days[i])*self.data.shape[1]) for i in range(len(days)-1)]
+        for n, mask_rate in enumerate(mask_rate_per_day):
+            if mask_rate > 0.5:
+                self.data[days[n]:days[n+1]] = np.nan
 
-        medians = np.median(self.data, axis=0)
-        flattened = self.data - medians
-        filtered = ndimage.median_filter(flattened, [1, median_filter_window])
-        corrected = flattened - filtered
-        MAD = np.median(np.abs(corrected - np.median(corrected)))
-        x = (corrected - np.median(corrected) > threshold * MAD)
-        self.data = np.ma.masked_array(self.data, x)
-        return self.data
 
-    def antenna_binning(self):
-        freq_bins = int((self.fhigh - self.flow)/2) + 1
-        minutes = self.times * 1440 / 23.94
-        bins = int(1440 / self.min_per_bin)
-        bin_num = np.zeros(len(minutes))
-        for i, minute in enumerate(minutes):
-            bin_num[i] = np.floor(minute / self.min_per_bin)
-        freq_list = [i for i in range(0, freq_bins)]
+def lst_binning(data, lst, binsize, method='mean'): 
+    binsize /= 60
+    bins = np.arange(binsize / 2, 24 + binsize / 2, binsize)
+    bin_inds = np.digitize(lst, bins=(bins + binsize / 2)) 
+    data_binned = np.zeros((len(bins), data.shape[1]))
+    if method == 'mean':
+        for i in range(len(bins)):
+            data_binned[i] = np.nanmean(data[bin_inds == i], axis=0)  
+    elif method == 'median':
+        for i in range(len(bins)):
+            data_binned[i] = np.nanmedian(data[bin_inds == i], axis=0) 
+    return bins, data_binned, bin_inds
 
-        binned = np.zeros((bins, freq_bins))
-        for j in range(0, bins):
-            cond = bin_num == j
-            mesh = np.ix_(cond, freq_list)
-            correct_data = self.data[mesh]
-            binned[j, :] = np.sum(correct_data, axis=0) / len(correct_data)
-        binned[np.isnan(binned)] = 0
-        return binned
+
+def f2i(f, flow=30, fhigh=200, num_inds=2785):
+    """convert freq to index"""
+    return int((f-flow) * (num_inds/(fhigh-flow)))
+
+
+def lst2ind(t, binsize):
+    """convert lst to index for lst binned data"""
+    binsize /= 60
+    return int(t/binsize)
+
+
+def split_days(lst):
+    days = find_peaks(lst)[0]
+    days = np.append(days, len(lst)-1)
+    days += 1
+    days = np.insert(days, 0, 0)
+    return days
