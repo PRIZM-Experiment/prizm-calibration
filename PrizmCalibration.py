@@ -1,7 +1,7 @@
 import numpy as np
 # import prizmatoid as pzt # missing file/module
 import data as da
-# import read_vna_csv as cs # missing file/module
+import util # replaces import read_vna_csv, which is a non-existing module
 from scipy import interpolate
 from scipy import signal
 from scipy import ndimage
@@ -44,7 +44,7 @@ def find_efficiency1(ant_s11, xsmooth):
     """ Finds the antenna efficiency from the antenna s11 only. """
     
     #read the sll files
-    s11=cs.read_vna_file(ant_s11)
+    s11=util.read_vna_file(ant_s11)
     s11freqs = s11[:,0]
     
     #convert the s11 from dB to linear 
@@ -66,8 +66,8 @@ def find_efficiency2(ant_s11, frontend_s11, xsmooth):
     """ Finds the antenna efficiency from the antenna and front end s11 data. """
     
     #read the sll files
-    s11=cs.read_vna_file(ant_s11)
-    j6=cs.read_vna_file(frontend_s11)
+    s11=util.read_vna_data(ant_s11)
+    j6=util.read_vna_data(frontend_s11)
     s11freqs = s11[:,0]
     
     #convert the angles to radians and amplitudes from dB to linear
