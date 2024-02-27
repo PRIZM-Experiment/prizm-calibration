@@ -8,12 +8,11 @@ class RFI_flagging:
         self.lst = lst_times
         self.freq = np.linspace(0, 250, 4096)
     
-    def __call__(self, hpass=30, lpass=200, binsize1=10, binsize2=5, thresh1=4, thresh2=3, discard=True):
+    def __call__(self, hpass=30, lpass=200, binsize1=10, binsize2=5, thresh1=4, thresh2=4):
         self.truncate(hpass, lpass)
         self.rfi_remove(binsize1, thresh1)
         self.discard_bad_spectra()
         self.rfi_remove(binsize2, thresh2)
-        self.discard_bad_spectra()
 
     def truncate(self, highpass, lowpass):
         flow = f2i(highpass, flow=0, fhigh=250, num_inds=4096)
