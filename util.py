@@ -9,7 +9,7 @@ def read_vna_data(filename, delimiter=",", encoding="ISO-8859-1"):
     2018 - .csv with , delimiters
     2019 - .csv with , delimiters
     2020 - Non-existent
-    2021 - .txt with \t delimtiers
+    2021 - .txt with \t delimiters
 
     Data from 2018 are .csv with peculiarities handled by this file.
     Data from 2022 are .txt with formatting as expected
@@ -112,12 +112,13 @@ def decode_line(line, delimiter, n_columns):
     tags = tags[:empty_column] + tags[(empty_column + 1):]
     counter = 0
 
-    #print(tags)
+    print('tags=',tags)
     #2021 VNA data, tab delimited data lines up with number of column labels
+    print('tag length=',len(tags))
     if len(tags) == 6:
         for s, string in enumerate(tags):
             data[s] = string.replace(",", ".")
-        data = data.astype(np.float)
+        data = data.astype(float)
 
     # <2021 data where every column has been split into before and after decimal points
     elif len(tags) == 12:
@@ -125,7 +126,7 @@ def decode_line(line, delimiter, n_columns):
         for s in indices:
             data[counter] = tags[s] + "." + tags[s+1]
             counter += 1
-        data = data.astype(np.float)
+        data = data.astype(float)
 
     #<2021 where frequencies are integers, but other columns have been split into two
     #TODO build a robuster check there might be the unlikely odd case the Magnitude/Phase columns are ints
@@ -137,7 +138,7 @@ def decode_line(line, delimiter, n_columns):
             else:
                 data[counter] = tags[s] + "." + tags[s+1]
             counter += 1
-        data = data.astype(np.float)
+        data = data.astype(float)
     else:
         raise Exception("A new case of VNA data formatting!")
     return data

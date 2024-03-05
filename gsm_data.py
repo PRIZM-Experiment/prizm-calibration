@@ -1,8 +1,8 @@
 import numpy as np
 import healpy
 import scipy
-from pygsm.pygsm2016 import GlobalSkyModel2016
-
+import sys
+from pygdsm import GlobalSkyModel16
 
 class GSMData:
 
@@ -21,6 +21,10 @@ class GSMData:
         return self.gsm_data
 
     def get_beam_dict(self):
+        """ 
+        Returns dictionary containing beam patterns retrieved from data files.
+        Dictionary entrys are labeled by frequency, and are a phi x theta grid.
+        """
        
         dir_parent='./Beams'
         if self.instrument == '100MHz':
@@ -96,7 +100,7 @@ class GSMData:
         healpy_beam_dict['theta'] = healpy_theta
         healpy_beam_dict['phi'] = healpy_phi
 
-        # SciPy 2D interpolation forces us to do proceed in chunks of constant
+        # SciPy 2D interpolation forces us to proceed in chunks of constant
         # coordinate `healpy_theta`. Below we find the indices at which
         # `healpy_theta` changes.
         indices = np.where(np.diff(healpy_theta) != 0)[0]
@@ -144,7 +148,7 @@ class GSMData:
             healpy_beam = beam_rotation.rotate_map_pixel(healpy_beam / beam_norms[i])
             healpy_beam_dict[frequency] = healpy_beam
 
-        # Adds the beam normalizations as a separate entry in `heapy_beam_dict`.
+        # Adds the beam normalizations as a separate entry in `healpy_beam_dict`.
         healpy_beam_dict['normalization'] = beam_norms
 
         # Returns the HealPy version of the beam in a dictionary format.
@@ -184,34 +188,39 @@ class GSMData:
 
     def get_GSM_temps(self, saved_maps=True):
         temperatures1 = []
+        # upload saved or generate GSM maps 
+        # Need to change frequency binning here. Assumes hard coded 2MHz bins for GSM
+        # but the resolution is much better than that.
         for i in range(30, 202, 2):
             if saved_maps:
                 gsm_map_lowres = np.load(f'./gsm_maps/gsm_{i}.npy')
             else:
-                gsm_2016 = GlobalSkyModel2016(freq_unit='MHz')
-                gsm_map = gsm_2016.generate(i)
-                gsm_map_eq = self.change_coord(gsm_map, ['G', 'C'])
-                gsm_map_lowres = healpy.ud_grade(gsm_map_eq, self.nside, order_in='RING', order_out='RING')
-
+                gsm_map_lowres = self.get_GSM_map(i, self.nside)
+            
+            # compute spherical harmonics coefficients of maps
             alm_map_eq = healpy.map2alm(gsm_map_lowres)
             alm_BEAM = healpy.map2alm(self.healpy_beam[i])
+            
             temp_map = np.full(gsm_map_lowres.size, 1)
             alm_temp_map = healpy.map2alm(temp_map)
             integral_beam0 = np.real(np.sum(alm_temp_map * alm_BEAM))
+            
+            # spherical harmonics, m
             lmax = int(np.round(np.sqrt(2 * len(alm_BEAM) - 0.5)))
             m = np.zeros(len(alm_BEAM))
-
             icur = 0
             for i in range(0, lmax):
                 nn = lmax - i
                 m[icur:icur + nn] = i
                 icur = icur + nn
-
+            
+            # Seems to be an array of phi values that depends on the LST time
             phi_rot1 = np.linspace(0, 2 * np.pi, int((1440 / self.min_per_bin) + 1))
             phitmp = phi_rot1.tolist()
             phitmp.pop()
             phi_rot1 = np.array(phitmp)
 
+            # Seems to be a rotation (in sph. harm. space) of the beam depending on the LST (phi)
             temperatures0 = []
             for phi in phi_rot1:
                 new_alm_beam = alm_BEAM * np.exp(-1j * phi * m)
@@ -225,12 +234,17 @@ class GSMData:
                 temperatures0.append(amp_alm_space0)
 
             temperatures1.append(temperatures0)
-        self.gsm_data = np.array(temperatures1).T
+        self.gsm_data = np.array(temperatures1).T # seems LST is the row (indexing row (i) specifies LST, indexing column (j) specifies freq)
         return self
 
     def align_GSMdata(self):
-        bin1 = round(1440 / self.min_per_bin)
-        I1 = int((360 / 720) * bin1)
+        '''
+        Not sure what this function does so far but I think it somehow aligns the sim GSM data to 
+        the way the real data is configured LST wise?
+        
+        '''
+        bin1 = round(1440 / self.min_per_bin) # 1440 mins = 24 hrs
+        I1 = int((360 / 720) * bin1) # what are 360, 720 (# bins for 2 min bins), and 530?
         I2 = int((530 / 720) * bin1)
         TGSM = []
         zerobin = (bin1 - I2) + I1
@@ -246,15 +260,25 @@ class GSMData:
     def save_GSM_data(self):
         np.save(f'./GSM_averages/{self.instrument}_{self.channel}_GSM_average_{self.min_per_bin}min', self.gsm_data)
 
-    def save_GSM_maps(self):
-        gsm_2016 = GlobalSkyModel2016(freq_unit='MHz')
-
+    def get_GSM_map(self, freq, nside):
+        ''' 
+        Generate low resolution GSM map in equatorial coordinates using pygdsm.
+        '''
+        gsm_2016 = GlobalSkyModel16(freq_unit='MHz')
+        gsm_map = gsm_2016.generate(freq)
+            
+        # convert galactic to equatorial coordinates
+        gsm_map_eq = self.change_coord(gsm_map, ['G', 'C'])
+            
+        # lower resolution of maps
+        gsm_map_lowres = healpy.ud_grade(gsm_map_eq, nside, order_in='RING', order_out='RING')
+        return gsm_map_lowres
+                
+    def save_GSM_maps(self, nside=256):
         for i in range(30, 202, 2):
-            gsm_map = gsm_2016.generate(i)
-            gsm_map_eq = self.change_coord(gsm_map, ['G', 'C'])
-            gsm_map_lowres = healpy.ud_grade(gsm_map_eq, 256, order_in='RING', order_out='RING')
+            gsm_map_lowres = self.get_GSM_map(i, nside)
             np.save(f'gsm_{i}', gsm_map_lowres)
-
+            
             
 def get_desired_frequencies(Tgsm, flow, fhigh):
     start = int((flow-30)/2)
