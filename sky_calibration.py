@@ -22,8 +22,8 @@ from gsm_data import GSMData, get_desired_frequencies
 
 # Step 3: Compute the transmission efficiency η (eta) from the data.
 
-# Step 4: For a full day of real data and GSM simulated data, take a full day average and remove 
-# the time independent component. 
+# STEP REMOVED (Step 4: For a full day of real data and GSM simulated data, take a full day average and remove 
+# the time independent component.)
 
 # Step 5: Do a fit for K_dGSM at each frequency to get K_dGSM(nu).
 
