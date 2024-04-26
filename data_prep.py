@@ -9,6 +9,8 @@ class DataPrep:
         self.data = self.prep_data()
         self.antenna = self.get_antenna_data(self.data)
         self.shorts = self.get_shorts(self.data)
+        self.res50 = self.get_res50(self.data)
+        self.res100 = self.get_res100(self.data)
         self.lst = self.get_lst_time(self.data)
         self.systime = self.get_sys_time(self.data)
     
@@ -43,6 +45,23 @@ class DataPrep:
                                 instrument=self.instrument,
                                 channel=self.channel,
                                 partition='short', threshold=5000)
+    def get_res50(self,data):
+        return data.interpolate(times=data.get(data='time_sys_start',
+                                               instrument=self.instrument,
+                                               channel=self.channel,
+                                               partition='antenna'),
+                                instrument=self.instrument,
+                                channel=self.channel,
+                                partition='res50', threshold=5000)
+    
+    def get_res100(self,data):
+        return data.interpolate(times=data.get(data='time_sys_start',
+                                               instrument=self.instrument,
+                                               channel=self.channel,
+                                               partition='antenna'),
+                                instrument=self.instrument,
+                                channel=self.channel,
+                                partition='res100', threshold=5000)
 
     def get_lst_time(self, data):
         start = data.get(data='lst_sys_start', instrument=self.instrument, channel=self.channel, partition='antenna')
@@ -55,7 +74,8 @@ class DataPrep:
         return (start + stop) / 2
 
     def prep_gsm_cal_data(self):
-        return self.antenna - self.shorts
+        # previously self.antenna - self.short, added in the flat 50 Ohm source calibration measurements
+        return (self.antenna - self.shorts)/(self.res50 - self.shorts) 
 
     def get_data_product(self, calibration_type):
         if calibration_type == 'GSM':
