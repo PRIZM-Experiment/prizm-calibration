@@ -71,7 +71,7 @@ class Data(collections.UserDict):
         return
 
     def get(self, data='pol', instrument='100MHz', channel='EW', partition='antenna'):
-        """ Extracts the data partitio'''''n associated with the input instrument and channel. """
+        """ Extracts the data partition associated with the input instrument and channel. """
 
         return get(self, data, instrument, channel, partition)
 
