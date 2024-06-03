@@ -8,9 +8,15 @@ class DataPrep:
         self.year = year
         self.data = self.prep_data()
         self.antenna = self.get_antenna_data(self.data)
+        
         self.shorts = self.get_shorts(self.data)
+        self.shorts_data = self.get_shorts_data(self.data)
+        self.shorts_data_lst = self.get_shorts_lst_time(self.data)
+        
         self.res50 = self.get_res50(self.data)
+        
         self.res100 = self.get_res100(self.data)
+        
         self.lst = self.get_lst_time(self.data)
         self.systime = self.get_sys_time(self.data)
     
@@ -45,6 +51,17 @@ class DataPrep:
                                 instrument=self.instrument,
                                 channel=self.channel,
                                 partition='short', threshold=5000)
+    
+    def get_shorts_lst_time(self, data):
+        # Returns the LST times at which short calibrator spectra are taken
+        start = data.get(data='lst_sys_start', instrument=self.instrument, channel=self.channel, partition='short')
+        stop = data.get(data='lst_sys_stop', instrument=self.instrument, channel=self.channel, partition='short')
+        return (start + stop) / 2
+    
+    def get_shorts_data(self, data):
+        # Saves only the measured spectra, *without* interpolating over antenna times
+        return data.get(data='pol', instrument=self.instrument, channel=self.channel, partition='short')
+    
     def get_res50(self,data):
         return data.interpolate(times=data.get(data='time_sys_start',
                                                instrument=self.instrument,
