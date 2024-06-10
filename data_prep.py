@@ -14,8 +14,12 @@ class DataPrep:
         self.shorts_data_lst = self.get_shorts_lst_time(self.data)
         
         self.res50 = self.get_res50(self.data)
+        self.res50_data = self.get_res50_data(self.data)
+        self.res50_data_lst = self.get_res50_lst_time(self.data)
         
         self.res100 = self.get_res100(self.data)
+        self.res100_data = self.get_res100_data(self.data)
+        self.res100_data_lst = self.get_res100_lst_time(self.data)
         
         self.lst = self.get_lst_time(self.data)
         self.systime = self.get_sys_time(self.data)
@@ -42,7 +46,8 @@ class DataPrep:
 
     def get_antenna_data(self, data):
         return data.get(data='pol', instrument=self.instrument, channel=self.channel, partition='antenna')
-
+    
+    # -------------------- Short ------------------------------------ #
     def get_shorts(self, data):
         return data.interpolate(times=data.get(data='time_sys_start',
                                                instrument=self.instrument,
@@ -62,6 +67,8 @@ class DataPrep:
         # Saves only the measured spectra, *without* interpolating over antenna times
         return data.get(data='pol', instrument=self.instrument, channel=self.channel, partition='short')
     
+    # --------------------- 50 Ohm ---------------------------------- #
+    
     def get_res50(self,data):
         return data.interpolate(times=data.get(data='time_sys_start',
                                                instrument=self.instrument,
@@ -71,6 +78,18 @@ class DataPrep:
                                 channel=self.channel,
                                 partition='res50', threshold=5000)
     
+    def get_res50_lst_time(self, data):
+        # Returns the LST times at which 50 Ohm calibrator spectra are taken
+        start = data.get(data='lst_sys_start', instrument=self.instrument, channel=self.channel, partition='res50')
+        stop = data.get(data='lst_sys_stop', instrument=self.instrument, channel=self.channel, partition='res50')
+        return (start + stop) / 2
+    
+    def get_res50_data(self, data):
+        # Saves only the measured spectra, *without* interpolating over antenna times
+        return data.get(data='pol', instrument=self.instrument, channel=self.channel, partition='res50')
+    
+    # ---------------------- 100 Ohm ------------------------------- #
+    
     def get_res100(self,data):
         return data.interpolate(times=data.get(data='time_sys_start',
                                                instrument=self.instrument,
@@ -79,6 +98,19 @@ class DataPrep:
                                 instrument=self.instrument,
                                 channel=self.channel,
                                 partition='res100', threshold=5000)
+    
+    def get_res100_lst_time(self, data):
+        # Returns the LST times at which short calibrator spectra are taken
+        start = data.get(data='lst_sys_start', instrument=self.instrument, channel=self.channel, partition='res100')
+        stop = data.get(data='lst_sys_stop', instrument=self.instrument, channel=self.channel, partition='res100')
+        return (start + stop) / 2
+    
+    def get_res100_data(self, data):
+        # Saves only the measured spectra, *without* interpolating over antenna times
+        return data.get(data='pol', instrument=self.instrument, channel=self.channel, partition='res100')
+    
+    # ---------------------------- Antenna ------------------------- #
+    
 
     def get_lst_time(self, data):
         start = data.get(data='lst_sys_start', instrument=self.instrument, channel=self.channel, partition='antenna')
