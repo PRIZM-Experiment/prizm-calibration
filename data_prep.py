@@ -31,7 +31,7 @@ class DataPrep:
         return self.get_data_product(calibration_type), self.lst, self.systime
 
     def prep_data(self):
-        selections = {'100MHz':{'EW': {'2018': './selections/2018_100MHz_EW.p', 
+        selections = {'100MHz':{'EW': {'2018': './selections/2018_100MHz_EW_Prototyping.p', 
                                    '2021': './selections/2021_100MHz_EW_Partial.p'}, 
                                 'NS': {'2018': './selections/2018_100MHz_NS.p', 
                                    '2021': './selections/2021_100MHz_NS_Partial.p'}
