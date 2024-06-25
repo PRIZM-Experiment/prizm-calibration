@@ -13,7 +13,7 @@ class RFI_flagging:
         self.rfi_remove(binsize1, thresh1)
         self.discard_bad_spectra()
         self.rfi_remove(binsize2, thresh2)
-        self.discard_bad_spectra()
+#         self.discard_bad_spectra()
 
     def truncate(self, highpass, lowpass):
         flow = f2i(highpass, flow=0, fhigh=250, num_inds=4096)
