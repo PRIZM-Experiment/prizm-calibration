@@ -6,16 +6,16 @@ from pygdsm import GlobalSkyModel16
 
 class GSMData:
 
-    def __init__(self, instrument, channel, min_per_bin, site_latitude=-46.88694, nside=256):
+    def __init__(self, instrument, channel, min_per_bin, horizon=[], site_latitude=-46.88694, nside=256):
         self.min_per_bin = min_per_bin
         self.instrument = instrument
         self.channel = channel
         self.nside = nside
         self.beam_dict = self.get_beam_dict()
-        self.healpy_beam = self.get_healpy_beam(site_latitude)
+        self.healpy_beam = self.get_healpy_beam(site_latitude, horizon)
         self.gsm_data = None
 
-    def __call__(self, zerobin=10):
+    def __call__(self, zerobin=0):
         self.get_GSM_temps().align_GSMdata(zerobin)
         return self.gsm_data
 
@@ -82,7 +82,7 @@ class GSMData:
         # Returns the beam information in a dictionary format.
         return beam_dict
 
-    def get_healpy_beam(self, site_latitude):
+    def get_healpy_beam(self, site_latitude, horizon):
         # Initializes the dictionary which will hold the HealPy version of the beam.
         healpy_beam_dict = {}
 
@@ -109,6 +109,16 @@ class GSMData:
         # for each beam.
         beam_norms = np.zeros(n_freq)
 
+        if len(horizon) > 0:
+            # healpy phi to horizon profile azimuth 
+            phi_binsize = self.beam_dict['phi'][1] - self.beam_dict['phi'][0]
+            phi_bins = self.beam_dict['phi'] + phi_binsize / 2
+            healpy_phi_bin = np.digitize(healpy_phi, bins=phi_bins)
+            healpy_phi_bin[healpy_phi_bin == len(phi_bins)] = 0
+        
+            # convert horizon angle to phi in radian
+            horizon = (90 - horizon) * np.pi / 180 
+        
         # Loops over the different frequencies for which the beam has been
         # simulated.
         for i, frequency in enumerate(frequencies):
@@ -132,18 +142,22 @@ class GSMData:
                 start = indices[j]
                 end = indices[j + 1]
                 healpy_beam[start:end] = beam_interp(healpy_theta[start],
-                                                     healpy_phi[start:end])[:, 0]
+                                                     healpy_phi[start:end])[:, 0]  
+
+            if len(horizon) > 0:
+                # apply horizon blockage
+                healpy_beam[healpy_theta > (horizon[healpy_phi_bin])] = 0                 
 
             # Fills `beam_norms` with the appropriate normalization factors for
             # each HealPy beam.
-            beam_norms[i] = np.sqrt(np.sum(healpy_beam ** 2))
+            beam_norms[i] = np.sqrt(np.sum(healpy_beam ** 2)) 
 
             # Rotates (euler rotation in ZYX) and stores the the HealPy beam in the `healpy_beam_dict` under
             # the appropriate frequency entry.
             if self.channel == 'NS':
-                beam_rotation = healpy.rotator.Rotator([0, 90 - site_latitude, 0])
-            if self.channel == 'EW':
                 beam_rotation = healpy.rotator.Rotator([90, 90 - site_latitude, 0])
+            if self.channel == 'EW':
+                beam_rotation = healpy.rotator.Rotator([0, 90 - site_latitude, 0])
             healpy_beam = beam_rotation.rotate_map_pixel(healpy_beam / beam_norms[i])
             healpy_beam_dict[frequency] = healpy_beam
 
