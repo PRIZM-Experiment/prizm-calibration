@@ -122,13 +122,6 @@ class DataPrep:
         stop = data.get(data='time_sys_stop', instrument=self.instrument, channel=self.channel, partition='antenna')
         return (start + stop) / 2
 
-<<<<<<< HEAD
-    def prep_gsm_cal_data(self):
-        # previously self.antenna - self.short, added in the flat 50 Ohm source calibration measurements
-        return (self.antenna - self.shorts)/(self.res50 - self.shorts) 
-
-=======
->>>>>>> origin/lisa2023
     def get_data_product(self, calibration_type):
         if calibration_type == 'short':
             calibration_data = self.antenna - self.shorts
