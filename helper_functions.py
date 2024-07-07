@@ -62,7 +62,7 @@ def binning(data, freq, lst, binsize_f, binsize_t, flow, fhigh):
     
     data_binned = np.array([[np.nanmean(data[bin_inds_t == i][:, bin_inds_f == j]) \
                              for j in range(len(bins_f))] for i in range(len(bins_t))])
-    return data_binned, bin_inds_f, bin_inds_t
+    return data_binned, bins_f, bins_t, bin_inds_f, bin_inds_t
 
 
 ### other functions
