@@ -75,10 +75,10 @@ class Data(collections.UserDict):
 
         return get(self, data, instrument, channel, partition)
 
-    def interpolate(self, times, instrument='100MHz', channel='EW', partition='short', threshold=500):
+    def interpolate(self, times, calib_mask, instrument='100MHz', channel='EW', partition='short', threshold=500):
         """ Employs linear interpolation over a given data partition to extrapolate spectra for each input time. """
 
-        return interpolate(self, times, instrument, channel, partition, threshold)
+        return interpolate(self, times, calib_mask, instrument, channel, partition, threshold)
 
 
 def iso(ctimes):
@@ -143,7 +143,40 @@ def get(self, data='pol', instrument='100MHz', channel='EW', partition='antenna'
     else:
         return np.r_[operator.itemgetter(*self[instrument][channel]['Partitions'][partition])(self[instrument][channel][data])]
 
-def interpolate(self, times, instrument='100MHz', channel='EW', partition='short', threshold=500):
+def apply_mask_and_update_slices(array, slices, full_mask):
+    """ Helper function for the interpolate() function. Implements the outlier calibrator spectra mask. """
+    updated_slices = []
+    start_ind = 0
+    for s in slices:
+        print(s)
+        # Retrieve the subset array using the slice instance
+        subset_array = array[s] # retrieves one of the short slices array
+        mask = full_mask[start_ind:start_ind+len(subset_array)]
+        print('mask:',mask)
+        
+        # Create a boolean mask for the indices of the original slice
+        indices = np.arange(*s.indices(len(array))) # get the indices from the slices
+        mask_indices = indices[mask] # mask the indices you don't want anymore
+        
+        # Create new slices that exclude the masked positions
+        if len(mask_indices) > 0:
+            # For simplicity, we want the slices to have consecutive indices (= separated by step of 1 only)
+            # We look for jumps in the indices post-masking
+            diffs = np.diff(mask_indices)
+            split_indices = np.where(diffs != 1)[0] + 1
+            subarrays = np.split(mask_indices,split_indices) # create subarrays of consecutive arrays to create new slices out of
+            
+            for subarray in subarrays:
+                if len(subarray) > 0:
+                    new_slice = slice(subarray[0], subarray[-1] + 1, None)
+                    updated_slices.append(new_slice)
+                    
+        start_ind += len(subset_array)
+    
+    return updated_slices
+    
+
+def interpolate(self, times, calib_mask, instrument='100MHz', channel='EW', partition='short', threshold=500):
     """ Employs linear interpolation over a given data partition to extrapolate spectra for each input time. """
 
     # The data to be interpolated: y = _interpolant(x)
@@ -159,6 +192,14 @@ def interpolate(self, times, instrument='100MHz', channel='EW', partition='short
 
     # Collects the appropriate portions of the data located in the vicinity of each input time value.
     portions = self[instrument][channel]['Partitions'][partition]
+    
+    '''UNDER DEVELOPMENT: masking flagged calibrator spectra'''
+    # Get rid of bad/outlier calibrator spectra
+    # The if statement checks if the mask is default (all True), in which case no masking is necessary
+    if not all(calib_mask):
+        portions = apply_mask_and_update_slices(x,portions,calib_mask) # updates 'portions' to not contain outlier spectra
+    '''---------------------------------------------------'''
+    
     slices = [slice(index, index + 1, None) for index in np.searchsorted(x, times)]
     portions = [(portions[index - 2], portions[index - 1], portions[index % len(portions)], portions[(index + 1) % len(portions)]) for index in np.searchsorted(portions, slices)]
 
@@ -206,6 +247,12 @@ def prep_gsmcal_data(instruments=['100MHz', '70MHz'], channels=['EW','NS'], year
     for channel, instrument, year in itertools.product(*[channels, instruments, years]):
         
         data = Data.via_metadatabase(selection = selections[instrument][channel][year])
+        
+        # Special case: 2021 100MHz EW/NS are swapped in the .p file.
+        if year == '2021' and instrument == '100MHz':
+            # Switch the channel attribute
+            if channel == 'EW': channel = 'NS'
+            else: channel = 'EW'
         
         data.partition(instruments=[instrument], channels=[channel], buffer=(1,1))
         
