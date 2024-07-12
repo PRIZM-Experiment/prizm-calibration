@@ -40,14 +40,12 @@ class DataPrep:
         self.calib_mask_dict = {'short':self.flag_calibrator_data(self.shorts_data,'short'),
                                 'res50':self.flag_calibrator_data(self.res50_data,'res50'),
                                 'res100':self.flag_calibrator_data(self.res100_data,'res100')}
-        # (Flagging: apply the mask) Actually I'm making this an optional call to get_flagged_calibrator_data()
-        # because I'll be passing the mask straight to the interpolation function.
         
-        # After flagging bad spectra, do the interpolation
+        # Flag bad spectra, then do interpolation
         # self.calib_mask_dict is retrieved within get_shorts (or res50, res100 equiv.)
         self.shorts = self.get_shorts(self.data)
-#         self.res50 = self.get_res50(self.data)
-#         self.res100 = self.get_res100(self.data)
+        self.res50 = self.get_res50(self.data)
+        self.res100 = self.get_res100(self.data)
     
     def __call__(self, calibration_type='GSM'):
         return self.get_data_product(calibration_type), self.lst, self.systime
@@ -102,7 +100,7 @@ class DataPrep:
                                 calib_mask=self.calib_mask_dict['short'],
                                 instrument=self.instrument,
                                 channel=self.channel,
-                                partition='short', threshold=7*3600) # try a 7h threshold...
+                                partition='short', threshold=5000)
     
     def get_shorts_lst_time(self, data):
         # Returns the LST times at which short calibrator spectra are taken
@@ -234,8 +232,6 @@ class DataPrep:
     
     def get_flagged_calibrator_data(self,partition,return_flagged=False):
         '''Returns 'clean' calibrator data (LST and post-flagging spectra). For data inspection and cleaning purposes.
-        
-        Ideas: maybe add option to return the flagged/outlier spectra.
         
         Parameters
         ----------

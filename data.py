@@ -143,6 +143,7 @@ def get(self, data='pol', instrument='100MHz', channel='EW', partition='antenna'
     else:
         return np.r_[operator.itemgetter(*self[instrument][channel]['Partitions'][partition])(self[instrument][channel][data])]
 
+
 def apply_mask_and_update_slices(array, slices, full_mask):
     """ Helper function for the interpolate() function. Implements the outlier calibrator spectra mask. """
     updated_slices = []
@@ -191,12 +192,10 @@ def interpolate(self, times, calib_mask, instrument='100MHz', channel='EW', part
     # Collects the appropriate portions of the data located in the vicinity of each input time value.
     portions = self[instrument][channel]['Partitions'][partition]
     
-    '''UNDER DEVELOPMENT: masking flagged calibrator spectra'''
     # Get rid of bad/outlier calibrator spectra
     # The if statement checks if the mask is default (all True), in which case no masking is necessary
     if not all(calib_mask):
         portions = apply_mask_and_update_slices(x,portions,calib_mask) # updates 'portions' to not contain outlier spectra
-    '''---------------------------------------------------'''
     
     slices = [slice(index, index + 1, None) for index in np.searchsorted(x, times)]
     portions = [(portions[index - 2], portions[index - 1], portions[index % len(portions)], portions[(index + 1) % len(portions)]) for index in np.searchsorted(portions, slices)]
@@ -216,7 +215,7 @@ def interpolate(self, times, calib_mask, instrument='100MHz', channel='EW', part
         elif np.all(pattern[1:4] == [False,True,False]): selection = (portion[2],portion[2])
         else:
             # None of the data portions clear the input threshold.
-            print('Input threshold not cleared. Filling with np.nan.')
+            # print('Input threshold not cleared. Filling with np.nan.') # for debugging
             interpolation[index,:].fill(np.nan)
             continue
 
