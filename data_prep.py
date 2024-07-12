@@ -102,7 +102,7 @@ class DataPrep:
                                 calib_mask=self.calib_mask_dict['short'],
                                 instrument=self.instrument,
                                 channel=self.channel,
-                                partition='short', threshold=5000)
+                                partition='short', threshold=7*3600) # try a 7h threshold...
     
     def get_shorts_lst_time(self, data):
         # Returns the LST times at which short calibrator spectra are taken
@@ -219,16 +219,9 @@ class DataPrep:
             else: channel_key = 'EW'
         else: channel_key = self.channel
         
-#         print('(Should return correct channel) channel_key=',channel_key)
-#         print(self.instrument,channel_key,self.year,partition)
-#         print(flag_thresholds[self.instrument][channel_key][self.year][partition])
-        
         try:
-#             print('Trying dictionary')
             thresh_selection = flag_thresholds[self.instrument][channel_key][self.year][partition]
-#             print('Dictionary worked')
             idx_threshold, threshold = thresh_selection['index'], thresh_selection['threshold']
-#             print('index:',idx_threshold,'threshold:',threshold)
         except:
             print('Returning default mask')
             return calib_mask # still all 'True', so no masking
@@ -239,12 +232,15 @@ class DataPrep:
         
         return calib_mask
     
-    def get_flagged_calibrator_data(self,partition):
-        '''Returns 'clean' calibrator data (LST and post-flagging. For data inspection and cleaning purposes.
+    def get_flagged_calibrator_data(self,partition,return_flagged=False):
+        '''Returns 'clean' calibrator data (LST and post-flagging spectra). For data inspection and cleaning purposes.
+        
+        Ideas: maybe add option to return the flagged/outlier spectra.
         
         Parameters
         ----------
         partition: which cleaned calibrator data to return; 'short', 'res50', or 'res100'.
+        return_flagged: set to 'True' to only the bad/outlier calibrator data.
         '''
         calib_list = {'short': [self.shorts_data_lst,self.shorts_data],
                      'res50': [self.res50_data_lst,self.res50_data],
@@ -253,7 +249,10 @@ class DataPrep:
         calib_mask = self.calib_mask_dict[partition]
         
         # Apply flag
-        flagged_data = [calib_data[0][calib_mask],calib_data[1][calib_mask]]
+        if return_flagged == True:
+            flagged_data = [calib_data[0][~calib_mask],calib_data[1][~calib_mask]]
+        else: 
+            flagged_data = [calib_data[0][calib_mask],calib_data[1][calib_mask]]
         
         return flagged_data
 

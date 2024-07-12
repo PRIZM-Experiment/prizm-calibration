@@ -148,11 +148,9 @@ def apply_mask_and_update_slices(array, slices, full_mask):
     updated_slices = []
     start_ind = 0
     for s in slices:
-        print(s)
         # Retrieve the subset array using the slice instance
         subset_array = array[s] # retrieves one of the short slices array
         mask = full_mask[start_ind:start_ind+len(subset_array)]
-        print('mask:',mask)
         
         # Create a boolean mask for the indices of the original slice
         indices = np.arange(*s.indices(len(array))) # get the indices from the slices
@@ -218,6 +216,7 @@ def interpolate(self, times, calib_mask, instrument='100MHz', channel='EW', part
         elif np.all(pattern[1:4] == [False,True,False]): selection = (portion[2],portion[2])
         else:
             # None of the data portions clear the input threshold.
+            print('Input threshold not cleared. Filling with np.nan.')
             interpolation[index,:].fill(np.nan)
             continue
 
