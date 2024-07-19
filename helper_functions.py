@@ -37,11 +37,11 @@ def lst_binning(data, lst, binsize, method='mean'):
         data_binned = np.array([np.nanmean(data[bin_inds == i], axis=0) for i in range(len(lst_bins))])   
     elif method == 'median':
         data_binned = np.array([np.nanmedian(data[bin_inds == i], axis=0) for i in range(len(lst_bins))])   
-    return lst_bins, data_binned, bin_inds
+    return data_binned, lst_bins, bin_inds
 
 
 def freq_binning(data, freq, binsize, flow, fhigh, method='mean'): 
-    bins = np.arange(flow, fhigh+1, binsize)
+    bins = np.arange(flow, fhigh, binsize)
     bin_inds = np.digitize(freq, bins=(bins + binsize / 2)) 
     if method == 'mean':
         data_binned = np.array([np.nanmean(data[:, bin_inds == i], axis=1) for i in range(len(bins))]).T   
@@ -52,7 +52,7 @@ def binning(data, freq, lst, binsize_f, binsize_t, flow, fhigh):
     """
     LST & freq binning
     """
-    bins_f = np.arange(flow, fhigh+1, binsize_f)
+    bins_f = np.arange(flow, fhigh, binsize_f)
     bin_inds_f = np.digitize(freq, bins=(bins_f + binsize_f / 2)) 
     
     binsize_t /= 60
@@ -62,8 +62,19 @@ def binning(data, freq, lst, binsize_f, binsize_t, flow, fhigh):
     
     data_binned = np.array([[np.nanmean(data[bin_inds_t == i][:, bin_inds_f == j]) \
                              for j in range(len(bins_f))] for i in range(len(bins_t))])
-    return data_binned, bin_inds_f, bin_inds_t
+    return data_binned, bins_f, bins_t, bin_inds_f, bin_inds_t
 
+
+def truncate(data, freq, highpass, lowpass):
+        '''
+        Crop to frequency range of [highpass, lowpass).
+        
+        Parameters:
+            highpass, lowpass (float): min/max frequency in MHz
+        '''
+        data = data[:, (freq >= highpass) & (freq < lowpass)]
+        freq = freq[(freq >= highpass) & (freq < lowpass)]
+        return data, freq
 
 ### other functions
 
