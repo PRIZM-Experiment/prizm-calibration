@@ -1,12 +1,12 @@
 import numpy as np
-import prizmatoid as pzt
+# import prizmatoid as pzt # missing file/module
 import data as da
-import read_vna_csv as cs
+import util # replaces import read_vna_csv, which is a non-existing module
 from scipy import interpolate
 from scipy import signal
 from scipy import ndimage
 import healpy as hp
-from pygsm2016 import GlobalSkyModel2016
+from pygsm.pygsm2016 import GlobalSkyModel2016
 
 
 #ANALYSIS FUNCTIONS
@@ -41,10 +41,19 @@ def sky_model(GSM, A, minutes, poly, low, high):
 
 
 def find_efficiency1(ant_s11, xsmooth):
-    """ Finds the antenna efficiency from the antenna s11 only. """
+    """ Finds the antenna efficiency from the antenna s11 only. 
+    
+    
+    Parameters
+    -----------
+    ant_s11: filepath to anetenna s11 (VNA) file
+    xsmooth: ?? According to scipy.signal.butter docs, in the case of lowpass ('lp') filter,
+    this is the critical frequency (scalar). So maybe 200 MHz for PRIZM?
+
+    """
     
     #read the sll files
-    s11=cs.read_vna_file(ant_s11)
+    s11=util.read_vna_data(ant_s11)
     s11freqs = s11[:,0]
     
     #convert the s11 from dB to linear 
@@ -53,7 +62,7 @@ def find_efficiency1(ant_s11, xsmooth):
         s11_eff[i]= 10**(s11[i,1]/20)
    
     #interpolate and smooth efficiency (to match frequencies used in data)
-    sos = signal.butter(1, xsmooth, btype='lp', output='sos')
+    sos = signal.butter(1, xsmooth, btype='lp', output='sos') # low pass filter
     lin=interpolate.interp1d(s11freqs, signal.sosfilt(sos, s11_eff), kind='slinear',fill_value="extrapolate")
     xnew= np.linspace(0,250000000, num = 4096, endpoint= True)
     eff=1-((lin(xnew))**2)
@@ -66,8 +75,8 @@ def find_efficiency2(ant_s11, frontend_s11, xsmooth):
     """ Finds the antenna efficiency from the antenna and front end s11 data. """
     
     #read the sll files
-    s11=cs.read_vna_file(ant_s11)
-    j6=cs.read_vna_file(frontend_s11)
+    s11=util.read_vna_data(ant_s11)
+    j6=util.read_vna_data(frontend_s11)
     s11freqs = s11[:,0]
     
     #convert the angles to radians and amplitudes from dB to linear

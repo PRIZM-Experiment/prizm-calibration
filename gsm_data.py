@@ -247,7 +247,8 @@ class GSMData:
             phitmp = phi_rot1.tolist()
             phitmp.pop()
             phi_rot1 = np.array(phitmp)
-
+            
+            # Rotation of beam map with LST
             temperatures0 = []
             for phi in phi_rot1:
                 new_alm_beam = alm_BEAM_horizon * np.exp(-1j * phi * m)
@@ -297,7 +298,7 @@ class GSMData:
                 
     def save_GSM_maps(self, nside=256):
         for i in range(30, 202, 2):
-            gsm_map_lowres = get_GSM_map(i, nside)
+            gsm_map_lowres = self.get_GSM_map(i, nside)
             np.save(f'gsm_{i}', gsm_map_lowres)
             
             
