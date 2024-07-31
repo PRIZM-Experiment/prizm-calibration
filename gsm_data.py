@@ -2,21 +2,22 @@ import numpy as np
 import healpy
 import scipy
 import sys
-from pygdsm import GlobalSkyModel16
+from pygdsm import GlobalSkyModel16, HaslamSkyModel, LowFrequencySkyModel
 
 class GSMData:
 
-    def __init__(self, instrument, channel, min_per_bin, site_latitude=-46.88694, nside=256):
+    def __init__(self, instrument, channel, min_per_bin, horizon=[], site_latitude=-46.88694, nside=256):
         self.min_per_bin = min_per_bin
         self.instrument = instrument
         self.channel = channel
         self.nside = nside
         self.beam_dict = self.get_beam_dict()
         self.healpy_beam = self.get_healpy_beam(site_latitude)
+        self.healpy_horizon = self.get_healpy_horizon(horizon, site_latitude)
         self.gsm_data = None
 
-    def __call__(self, zerobin=10):
-        self.get_GSM_temps().align_GSMdata(zerobin)
+    def __call__(self, model='GSM16', beta=None, saved_maps=True, zerobin=0):
+        self.get_GSM_temps(model='GSM16', beta=None, saved_maps=saved_maps).align_GSMdata(zerobin)
         return self.gsm_data
 
     def get_beam_dict(self):
@@ -108,7 +109,7 @@ class GSMData:
         # Initializes the NumPy array which will contain the normalization factor
         # for each beam.
         beam_norms = np.zeros(n_freq)
-
+        
         # Loops over the different frequencies for which the beam has been
         # simulated.
         for i, frequency in enumerate(frequencies):
@@ -132,18 +133,18 @@ class GSMData:
                 start = indices[j]
                 end = indices[j + 1]
                 healpy_beam[start:end] = beam_interp(healpy_theta[start],
-                                                     healpy_phi[start:end])[:, 0]
+                                                     healpy_phi[start:end])[:, 0]                
 
             # Fills `beam_norms` with the appropriate normalization factors for
             # each HealPy beam.
-            beam_norms[i] = np.sqrt(np.sum(healpy_beam ** 2))
+            beam_norms[i] = np.sqrt(np.sum(healpy_beam ** 2)) 
 
             # Rotates (euler rotation in ZYX) and stores the the HealPy beam in the `healpy_beam_dict` under
             # the appropriate frequency entry.
             if self.channel == 'NS':
-                beam_rotation = healpy.rotator.Rotator([0, 90 - site_latitude, 0])
-            if self.channel == 'EW':
                 beam_rotation = healpy.rotator.Rotator([90, 90 - site_latitude, 0])
+            if self.channel == 'EW':
+                beam_rotation = healpy.rotator.Rotator([0, 90 - site_latitude, 0])
             healpy_beam = beam_rotation.rotate_map_pixel(healpy_beam / beam_norms[i])
             healpy_beam_dict[frequency] = healpy_beam
 
@@ -152,6 +153,35 @@ class GSMData:
 
         # Returns the HealPy version of the beam in a dictionary format.
         return healpy_beam_dict
+
+    def get_healpy_horizon(self, horizon, site_latitude):
+        # Initializes 'healpy_horizon', horizon blockage mask in healpy pix
+        healpy_horizon = np.ones(len(self.healpy_beam['theta']))
+        
+        if len(horizon) > 0:
+            # healpy phi to horizon profile azimuth 
+            phi_binsize = self.beam_dict['phi'][1] - self.beam_dict['phi'][0]
+            phi_bins = self.beam_dict['phi'] + phi_binsize / 2
+            healpy_phi_bin = np.digitize(self.healpy_beam['phi'], bins=phi_bins)
+            healpy_phi_bin[healpy_phi_bin == len(phi_bins)] = 0
+
+            # convert horizon angle to phi in radian
+            horizon = (90 - horizon) * np.pi / 180
+            
+            # apply horizon
+            healpy_horizon[self.healpy_beam['theta'] > (horizon[healpy_phi_bin])] = 0
+            healpy_horizon[np.abs(self.healpy_beam['theta'] - (horizon[healpy_phi_bin])) < 1e-16] = 0.5
+        else:
+            # flat horizon
+            healpy_horizon[self.healpy_beam['theta'] > np.pi/2] = 0
+            # set mask at pixels at theta=90 to 0.5
+            healpy_horizon[np.abs(self.healpy_beam['theta'] - np.pi/2) < 1e-16] = 0.5
+            
+        # rotate horizon
+        beam_rotation = healpy.rotator.Rotator([0, 90 - site_latitude, 0])
+        healpy_horizon = beam_rotation.rotate_map_pixel(healpy_horizon)
+            
+        return healpy_horizon
 
     @staticmethod
     def change_coord(m, coord):
@@ -185,33 +215,34 @@ class GSMData:
 
         return m[..., new_pix]
 
-    def get_GSM_temps(self, saved_maps=True):
+    def get_GSM_temps(self, model='GSM16', beta=None, saved_maps=True):
         temperatures1 = []
         # upload saved or generate GSM maps 
         for i in range(30, 202, 2):
             if saved_maps:
                 gsm_map_lowres = np.load(f'./gsm_maps/gsm_{i}.npy')
             else:
-                gsm_map_lowres = self.get_GSM_map(i, self.nside)
+                gsm_map_lowres = self.get_GSM_map(i, beta=beta, model=model)
             
             # convert map in spherical coordinates to spherical harmonic coefficients
             alm_map_eq = healpy.map2alm(gsm_map_lowres)
             alm_BEAM = healpy.map2alm(self.healpy_beam[i])
+            alm_BEAM_horizon = healpy.map2alm(self.healpy_horizon * self.healpy_beam[i])
             
             temp_map = np.full(gsm_map_lowres.size, 1)
             alm_temp_map = healpy.map2alm(temp_map)
             integral_beam0 = np.real(np.sum(alm_temp_map * alm_BEAM))
             
-            # spherical harmonics, m
+            # spherical harmonics
             lmax = int(np.round(np.sqrt(2 * len(alm_BEAM) - 0.5)))
             m = np.zeros(len(alm_BEAM))
             icur = 0
+            # alm only gives postive m bc real values == symmetric
             for i in range(0, lmax):
                 nn = lmax - i
                 m[icur:icur + nn] = i
                 icur = icur + nn
             
-            # Array of phi values to rotate over depending on LST
             phi_rot1 = np.linspace(0, 2 * np.pi, int((1440 / self.min_per_bin) + 1))
             phitmp = phi_rot1.tolist()
             phitmp.pop()
@@ -220,10 +251,11 @@ class GSMData:
             # Rotation of beam map with LST
             temperatures0 = []
             for phi in phi_rot1:
-                new_alm_beam = alm_BEAM * np.exp(-1j * phi * m)
+                new_alm_beam = alm_BEAM_horizon * np.exp(-1j * phi * m)
 
                 y0 = new_alm_beam * np.conj(alm_map_eq)
-
+                
+                # y0[:lmax] is m=0, 2 * y0[lmax:] for +-m
                 integral_beam_map0 = np.real((np.sum(y0[:lmax]) + 2 * np.sum(y0[lmax:])))
 
                 amp_alm_space0 = integral_beam_map0 / integral_beam0
@@ -243,12 +275,19 @@ class GSMData:
     def save_GSM_data(self):
         np.save(f'./GSM_averages/{self.instrument}_{self.channel}_GSM_average_{self.min_per_bin}min', self.gsm_data)
 
-    def get_GSM_map(self, freq):
+    def get_GSM_map(self, freq, beta=None, model='GSM16'):
         ''' 
         Generate low resolution GSM map in equatorial coordinates using pygdsm.
         '''
-        gsm_2016 = GlobalSkyModel16(freq_unit='MHz')
-        gsm_map = gsm_2016.generate(freq)
+        if model == 'GSM16':
+            gsm = GlobalSkyModel16(freq_unit='MHz')
+        elif model == 'Haslam':
+            gsm = HaslamSkyModel(freq_unit='MHz', spectral_index=beta)
+        elif model == 'LFSS':
+            gsm = LowFrequencySkyModel(freq_unit='MHz')
+        else:
+            print('Model must be GSM16, Haslam, or LFSS')
+        gsm_map = gsm.generate(freq)
             
         # convert galactic to equatorial coordinates
         gsm_map_eq = self.change_coord(gsm_map, ['G', 'C'])

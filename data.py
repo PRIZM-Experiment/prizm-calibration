@@ -1,9 +1,11 @@
+import os
 import glob
 import pickle
 import operator
 import itertools
 import collections
 import numpy as np
+import scipy.interpolate
 import metadatabase as mdb
 from astropy.time import Time
 
@@ -270,7 +272,92 @@ def prep_gsmcal_data(instruments=['100MHz', '70MHz'], channels=['EW','NS'], year
         
     return gsmcal_data, time_data
 
+
+def get_ambient_temperatures(instrument, path2dir, verbose=False):
+    '''
+    Length of temperature and time_sys arrays don't match in some data directories for 2021/2022
+    Get ambient temperature & sys time if array lengths match.
+    '''
+    
+    ### following are for 2021. if using for other years, replace with appropriate file/directory names ####
+    classification_catalogue = {
+        'data_100MHz': '100MHz',
+        'data_70MHz': '70MHz',
+    }
+
+    file_catalogue = {
+        'time_start_sys_therms.raw': ('float',['Temperature'],'time_sys_start'),
+        'time_stop_sys_therms.raw': ('float',['Temperature'],'time_sys_stop'),
+        'temp_100_ambient.raw': ('float',['Temperature'],'temp_ambient'),
+        'temp_70_ambient.raw': ('float',['Temperature'],'temp_ambient'),
+    }
+    
+    # the directories named by 1st 5 digits of unix time
+    unix_day_start = 16348
+    unix_day_stop = 16395
+    
+    ########################################################################################################
+    
+    T_amb = []
+    time_sys_start = []
+    time_sys_stop = []
+    
+    def add_temp(T_amb, time_sys_start, time_sys_stop, db):
+        T_amb = np.concatenate((T_amb, db[instrument]['Temperature']['temp_ambient']))
+        time_sys_start= np.concatenate((time_sys_start, db[instrument]['Temperature']['time_sys_start']))
+        time_sys_stop = np.concatenate((time_sys_stop, db[instrument]['Temperature']['time_sys_stop']))
+        return T_amb, time_sys_start, time_sys_stop
+    
+    for day in range(unix_day_start, unix_day_stop):
+        if os.path.exists(f'{path2dir}/{day}'):
+            db = Data.from_directories(directory_addresses=[f'{path2dir}/{day}'],
+                                         classification_catalogue=classification_catalogue,
+                                         file_catalogue=file_catalogue)
+
+            if len(db[instrument]['Temperature']['time_sys_start']) == len(db[instrument]['Temperature']['temp_ambient']):
+                T_amb, time_sys_start, time_sys_stop = add_temp(T_amb, time_sys_start, time_sys_stop, db)
+            else:
+                for hour in range(int(day * 1e5), int((day+1)*1e5)):
+                    if os.path.exists(f'{path2dir}/{day}/{hour}'):
+                        db = Data.from_directories(directory_addresses=[f'{path2dir}/{day}/{hour}'],
+                                     classification_catalogue=classification_catalogue,
+                                     file_catalogue=file_catalogue)
+
+                        if len(db[instrument]['Temperature']['time_sys_start']) == len(db[instrument]['Temperature']['temp_ambient']):
+                            T_amb, time_sys_start, time_sys_stop = add_temp(T_amb, time_sys_start, time_sys_stop, db)
+                        else:
+                            if verbose:
+                                print(f'{hour} {instrument} array mismatch')
+    # convert Celsius to Kelvin
+    T_amb += 273.15
+
+    # discard bad data (where time=0)
+    bad_inds = np.unique((np.where(time_sys_start < 1e-16)[0], np.where(time_sys_stop < 1e-16)[0]))
+    T_amb = np.delete(T_amb, bad_inds)
+    time_sys_start = np.delete(time_sys_start, bad_inds)
+    time_sys_stop = np.delete(time_sys_stop, bad_inds)
+    return T_amb, time_sys_start, time_sys_stop
+
+
+def interpolate_temperature(T_amb, temp_time, ant_time, thresh=500):
+    '''
+    Interpolate ambient temperature to antenna data times
+    '''
+    nearest_time_up = np.array([int(index) for index in np.searchsorted(temp_time, ant_time)])
+    nearest_time_down = nearest_time_up - 1
+
+    nearest_time_up[nearest_time_up == len(temp_time)] = len(temp_time) - 1
+    nearest_time_down[nearest_time_down == -1] = 0
+
+    interp_inds = (np.abs(ant_time - temp_time[nearest_time_up]) < thresh) & (np.abs(ant_time - temp_time[nearest_time_down]) < thresh)
+    
+    T_func = scipy.interpolate.interp1d(temp_time, T_amb, kind='cubic')
+    return T_func(ant_time[interp_inds]), ant_time[interp_inds], interp_inds
+
 # Aliases included for backwards compatibility.
 timestamp_from_ctime = iso
 siderealtime_from_ctime = lst
 add_switch_flags = partition
+
+
+

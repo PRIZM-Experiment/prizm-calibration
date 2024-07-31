@@ -257,8 +257,12 @@ class DataPrep:
         return (self.antenna - self.shorts)/(self.res50 - self.shorts) 
 
     def get_data_product(self, calibration_type):
-        if calibration_type == 'GSM':
-            calibration_data = self.prep_gsm_cal_data()
+        if calibration_type == 'short':
+            calibration_data = self.antenna - self.shorts
+        elif calibration_type == 'res50':
+            calibration_data = (self.antenna - self.shorts)/(self.res50 - self.shorts)
+        elif calibration_type == 'res100':
+            calibration_data = (self.antenna - self.shorts)/(self.res100 - self.shorts)
         elif calibration_type == 'raw':
             calibration_data = self.antenna
         return calibration_data
