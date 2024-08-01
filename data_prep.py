@@ -1,6 +1,9 @@
 import sys
 from data import Data
 
+import sys
+from data import Data
+
 class DataPrep:
     def __init__(self, instrument, channel, year):
         self.instrument = instrument
@@ -20,6 +23,8 @@ class DataPrep:
         self.res100 = self.get_res100(self.data)
         self.res100_data = self.get_res100_data(self.data)
         self.res100_data_lst = self.get_res100_lst_time(self.data)
+        
+        self.noise = self.get_noise(self.data)
         
         self.lst = self.get_lst_time(self.data)
         self.systime = self.get_sys_time(self.data)
@@ -109,6 +114,17 @@ class DataPrep:
         # Saves only the measured spectra, *without* interpolating over antenna times
         return data.get(data='pol', instrument=self.instrument, channel=self.channel, partition='res100')
     
+    
+    # ---------------------- Noise ----------------------------------#
+    def get_noise(self, data):
+        return data.interpolate(times=data.get(data='time_sys_start',
+                                               instrument=self.instrument,
+                                               channel=self.channel,
+                                               partition='antenna'),
+                                instrument=self.instrument,
+                                channel=self.channel,
+                                partition='noise', threshold=5000)
+    
     # ---------------------------- Antenna ------------------------- #
     
 
@@ -132,4 +148,3 @@ class DataPrep:
         elif calibration_type == 'raw':
             calibration_data = self.antenna
         return calibration_data
-    

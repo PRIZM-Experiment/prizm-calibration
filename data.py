@@ -77,10 +77,10 @@ class Data(collections.UserDict):
 
         return get(self, data, instrument, channel, partition)
 
-    def interpolate(self, times, instrument='100MHz', channel='EW', partition='short', threshold=500):
+    def interpolate(self, times, calib_mask, instrument='100MHz', channel='EW', partition='short', threshold=500):
         """ Employs linear interpolation over a given data partition to extrapolate spectra for each input time. """
 
-        return interpolate(self, times, instrument, channel, partition, threshold)
+        return interpolate(self, times, calib_mask, instrument, channel, partition, threshold)
 
 
 def iso(ctimes):
@@ -145,7 +145,39 @@ def get(self, data='pol', instrument='100MHz', channel='EW', partition='antenna'
     else:
         return np.r_[operator.itemgetter(*self[instrument][channel]['Partitions'][partition])(self[instrument][channel][data])]
 
-def interpolate(self, times, instrument='100MHz', channel='EW', partition='short', threshold=500):
+
+def apply_mask_and_update_slices(array, slices, full_mask):
+    """ Helper function for the interpolate() function. Implements the outlier calibrator spectra mask. """
+    updated_slices = []
+    start_ind = 0
+    for s in slices:
+        # Retrieve the subset array using the slice instance
+        subset_array = array[s] # retrieves one of the short slices array
+        mask = full_mask[start_ind:start_ind+len(subset_array)]
+        
+        # Create a boolean mask for the indices of the original slice
+        indices = np.arange(*s.indices(len(array))) # get the indices from the slices
+        mask_indices = indices[mask] # mask the indices you don't want anymore
+        
+        # Create new slices that exclude the masked positions
+        if len(mask_indices) > 0:
+            # For simplicity, we want the slices to have consecutive indices (= separated by step of 1 only)
+            # We look for jumps in the indices post-masking
+            diffs = np.diff(mask_indices)
+            split_indices = np.where(diffs != 1)[0] + 1
+            subarrays = np.split(mask_indices,split_indices) # create subarrays of consecutive arrays to create new slices out of
+            
+            for subarray in subarrays:
+                if len(subarray) > 0:
+                    new_slice = slice(subarray[0], subarray[-1] + 1, None)
+                    updated_slices.append(new_slice)
+                    
+        start_ind += len(subset_array)
+    
+    return updated_slices
+    
+
+def interpolate(self, times, calib_mask, instrument='100MHz', channel='EW', partition='short', threshold=500):
     """ Employs linear interpolation over a given data partition to extrapolate spectra for each input time. """
 
     # The data to be interpolated: y = _interpolant(x)
@@ -161,6 +193,12 @@ def interpolate(self, times, instrument='100MHz', channel='EW', partition='short
 
     # Collects the appropriate portions of the data located in the vicinity of each input time value.
     portions = self[instrument][channel]['Partitions'][partition]
+    
+    # Get rid of bad/outlier calibrator spectra
+    # The if statement checks if the mask is default (all True), in which case no masking is necessary
+    if not all(calib_mask):
+        portions = apply_mask_and_update_slices(x,portions,calib_mask) # updates 'portions' to not contain outlier spectra
+    
     slices = [slice(index, index + 1, None) for index in np.searchsorted(x, times)]
     portions = [(portions[index - 2], portions[index - 1], portions[index % len(portions)], portions[(index + 1) % len(portions)]) for index in np.searchsorted(portions, slices)]
 
@@ -179,6 +217,7 @@ def interpolate(self, times, instrument='100MHz', channel='EW', partition='short
         elif np.all(pattern[1:4] == [False,True,False]): selection = (portion[2],portion[2])
         else:
             # None of the data portions clear the input threshold.
+            # print('Input threshold not cleared. Filling with np.nan.') # for debugging
             interpolation[index,:].fill(np.nan)
             continue
 
@@ -209,6 +248,12 @@ def prep_gsmcal_data(instruments=['100MHz', '70MHz'], channels=['EW','NS'], year
         
         data = Data.via_metadatabase(selection = selections[instrument][channel][year])
         
+        # Special case: 2021 100MHz EW/NS are swapped in the .p file.
+        if year == '2021' and instrument == '100MHz':
+            # Switch the channel attribute
+            if channel == 'EW': channel = 'NS'
+            else: channel = 'EW'
+        
         data.partition(instruments=[instrument], channels=[channel], buffer=(1,1))
         
         #time = data.get(data='time_sys_start', instrument=instrument, channel=channel, partition='antenna')
@@ -227,41 +272,75 @@ def prep_gsmcal_data(instruments=['100MHz', '70MHz'], channels=['EW','NS'], year
         
     return gsmcal_data, time_data
 
-
-def get_ambient_temperatures(instrument, path2dir, verbose=False):
+def get_temperatures(instrument, path2dir, temp_type='ambient', time_type='sys', \
+                             unix_day_start=16348, unix_day_stop=16395, verbose=False):
     '''
-    Length of temperature and time_sys arrays don't match in some data directories for 2021/2022
-    Get ambient temperature & sys time if array lengths match.
+    Length of temperature and time arrays don't match in some data directories for 2021/2022
+    Get temperature & time if array lengths match. If len(time) - len(temperature) == 1, discard 
+    last time measurement.
     '''
     
-    ### following are for 2021. if using for other years, replace with appropriate file/directory names ####
-    classification_catalogue = {
-        'data_100MHz': '100MHz',
-        'data_70MHz': '70MHz',
-    }
+    # following are for 2021
+    if instrument == '100MHz':
+        classification_catalogue = {
+            'data_100MHz': '100MHz',
+        }
+        full_file_catalogue = {
+            'time_start_sys_therms.raw': ('float',['temperature'],'time_sys_start'),
+            'time_stop_sys_therms.raw': ('float',['temperature'],'time_sys_stop'),
+            'time_start_rtc_therms.raw': ('float',['temperature'],'time_rtc_start'),
+            'time_stop_rtc_therms.raw': ('float',['temperature'],'time_rtc_stop'),
+            'time_start_gps_therms.raw': ('float',['temperature'],'time_gps_start'),
+            'time_stop_gps_therms.raw': ('float',['temperature'],'time_gps_stop'),
+            'temp_100_ambient.raw': ('float',['temperature'],'temp_ambient'),
+            'temp_100EW_bot_lna.raw': ('float',['temperature'],'temp_100EW_bot_lna'),
+            'temp_100NS_bot_lna.raw': ('float',['temperature'],'temp_100NS_bot_lna'),
+            'temp_100EW_top_lna.raw': ('float',['temperature'],'temp_100EW_top_lna'),
+            'temp_100NS_top_lna.raw': ('float',['temperature'],'temp_100NS_top_lna'),
+            'temp_100EW_switch.raw': ('float',['temperature'],'temp_100EW_switch'),
+            'temp_100NS_switch.raw': ('float',['temperature'],'temp_100NS_switch'),
+            'temp_100EW_noise.raw': ('float',['temperature'],'temp_100EW_noise'),
+            'temp_100NS_noise.raw': ('float',['temperature'],'temp_100NS_noise'),
+        }
+    elif instrument == '70MHz':
+        classification_catalogue = {
+            'data_70MHz': '70MHz',
+        }
+        full_file_catalogue = {
+            'time_start_sys_therms.raw': ('float',['temperature'],'time_sys_start'),
+            'time_stop_sys_therms.raw': ('float',['temperature'],'time_sys_stop'),
+            'time_start_rtc_therms.raw': ('float',['temperature'],'time_rtc_start'),
+            'time_stop_rtc_therms.raw': ('float',['temperature'],'time_rtc_stop'),
+            'time_start_gps_therms.raw': ('float',['temperature'],'time_gps_start'),
+            'time_stop_gps_therms.raw': ('float',['temperature'],'time_gps_stop'),
+            'temp_70_ambient.raw': ('float',['temperature'],'temp_ambient'),
+            'temp_70EW_bot_lna.raw': ('float',['temperature'],'temp_70EW_bot_lna'),
+            'temp_70NS_bot_lna.raw': ('float',['temperature'],'temp_70NS_bot_lna'),
+            'temp_70EW_top_lna.raw': ('float',['temperature'],'temp_70EW_top_lna'),
+            'temp_70NS_top_lna.raw': ('float',['temperature'],'temp_70NS_top_lna'),
+            'temp_70EW_switch.raw': ('float',['temperature'],'temp_70EW_switch'),
+            'temp_70NS_switch.raw': ('float',['temperature'],'temp_70NS_switch'),
+            'temp_70EW_noise.raw': ('float',['temperature'],'temp_70EW_noise'),
+            'temp_70NS_noise.raw': ('float',['temperature'],'temp_70NS_noise'),
+        }
+            
+    file_catalogue = dict()
+    data_dict = dict()
+    
+    for key, value in full_file_catalogue.items():
+        if key.endswith(time_type + '_therms.raw'):
+            file_catalogue[key] = value
+            data_dict[value[2]] = []
+        if key.endswith(temp_type + '.raw'):
+            file_catalogue[key] = value
+            data_dict[value[2]] = []
 
-    file_catalogue = {
-        'time_start_sys_therms.raw': ('float',['Temperature'],'time_sys_start'),
-        'time_stop_sys_therms.raw': ('float',['Temperature'],'time_sys_stop'),
-        'temp_100_ambient.raw': ('float',['Temperature'],'temp_ambient'),
-        'temp_70_ambient.raw': ('float',['Temperature'],'temp_ambient'),
-    }
-    
-    # the directories named by 1st 5 digits of unix time
-    unix_day_start = 16348
-    unix_day_stop = 16395
-    
-    ########################################################################################################
-    
-    T_amb = []
-    time_sys_start = []
-    time_sys_stop = []
-    
-    def add_temp(T_amb, time_sys_start, time_sys_stop, db):
-        T_amb = np.concatenate((T_amb, db[instrument]['Temperature']['temp_ambient']))
-        time_sys_start= np.concatenate((time_sys_start, db[instrument]['Temperature']['time_sys_start']))
-        time_sys_stop = np.concatenate((time_sys_stop, db[instrument]['Temperature']['time_sys_stop']))
-        return T_amb, time_sys_start, time_sys_stop
+    def add_temp(data_dict, db):    
+        for key in file_catalogue.keys():
+            channel = file_catalogue[key][1][0]
+            data_type = file_catalogue[key][2]
+            data_dict[data_type] = np.concatenate((data_dict[data_type], db[instrument][channel][data_type]))
+        return data_dict
     
     for day in range(unix_day_start, unix_day_stop):
         if os.path.exists(f'{path2dir}/{day}'):
@@ -269,8 +348,8 @@ def get_ambient_temperatures(instrument, path2dir, verbose=False):
                                          classification_catalogue=classification_catalogue,
                                          file_catalogue=file_catalogue)
 
-            if len(db[instrument]['Temperature']['time_sys_start']) == len(db[instrument]['Temperature']['temp_ambient']):
-                T_amb, time_sys_start, time_sys_stop = add_temp(T_amb, time_sys_start, time_sys_stop, db)
+            if len(db[instrument]['temperature'][f'time_{time_type}_start']) == len(db[instrument]['temperature'][f'temp_{temp_type}']):
+                data_dict = add_temp(data_dict, db)
             else:
                 for hour in range(int(day * 1e5), int((day+1)*1e5)):
                     if os.path.exists(f'{path2dir}/{day}/{hour}'):
@@ -278,23 +357,28 @@ def get_ambient_temperatures(instrument, path2dir, verbose=False):
                                      classification_catalogue=classification_catalogue,
                                      file_catalogue=file_catalogue)
 
-                        if len(db[instrument]['Temperature']['time_sys_start']) == len(db[instrument]['Temperature']['temp_ambient']):
-                            T_amb, time_sys_start, time_sys_stop = add_temp(T_amb, time_sys_start, time_sys_stop, db)
+                        if len(db[instrument]['temperature'][f'time_{time_type}_start']) == len(db[instrument]['temperature'][f'temp_{temp_type}']):
+                            data_dict = add_temp(data_dict, db)
+                        elif (len(db[instrument]['temperature'][f'time_{time_type}_start']) - len(db[instrument]['temperature'][f'temp_{temp_type}'])) == 1:
+                            db[instrument]['temperature'][f'time_{time_type}_start'] = np.delete(db[instrument]['temperature'][f'time_{time_type}_start'], -1)
+                            db[instrument]['temperature'][f'time_{time_type}_stop'] = np.delete(db[instrument]['temperature'][f'time_{time_type}_stop'], -1)
+                            data_dict = add_temp(data_dict, db)
                         else:
                             if verbose:
-                                print(f'{hour} {instrument} array mismatch')
+                                mismatch = len(db[instrument]['temperature']['time_sys_start']) - len(db[instrument]['temperature'][f'temp_{temp_type}'])
+                                print(f'{hour} {instrument} array mismatch by: {mismatch}')
     # convert Celsius to Kelvin
-    T_amb += 273.15
+    data_dict[f'temp_{temp_type}'] += 273.15
 
     # discard bad data (where time=0)
-    bad_inds = np.unique((np.where(time_sys_start < 1e-16)[0], np.where(time_sys_stop < 1e-16)[0]))
-    T_amb = np.delete(T_amb, bad_inds)
-    time_sys_start = np.delete(time_sys_start, bad_inds)
-    time_sys_stop = np.delete(time_sys_stop, bad_inds)
-    return T_amb, time_sys_start, time_sys_stop
+    bad_inds = np.unique((np.where(data_dict[f'time_{time_type}_start'] < 1e-16)[0], np.where(data_dict[f'time_{time_type}_stop'] < 1e-16)[0]))
+    data_dict[f'time_{time_type}_start'] = np.delete(data_dict[f'time_{time_type}_start'], bad_inds)
+    data_dict[f'time_{time_type}_stop'] = np.delete(data_dict[f'time_{time_type}_stop'], bad_inds)
+    data_dict[f'temp_{temp_type}'] = np.delete(data_dict[f'temp_{temp_type}'], bad_inds)
+    return data_dict
 
 
-def interpolate_temperature(T_amb, temp_time, ant_time, thresh=500):
+def interpolate_temperature(T, temp_time, ant_time, thresh=500):
     '''
     Interpolate ambient temperature to antenna data times
     '''
@@ -306,7 +390,7 @@ def interpolate_temperature(T_amb, temp_time, ant_time, thresh=500):
 
     interp_inds = (np.abs(ant_time - temp_time[nearest_time_up]) < thresh) & (np.abs(ant_time - temp_time[nearest_time_down]) < thresh)
     
-    T_func = scipy.interpolate.interp1d(temp_time, T_amb, kind='cubic')
+    T_func = scipy.interpolate.interp1d(temp_time, T, kind='cubic')
     return T_func(ant_time[interp_inds]), ant_time[interp_inds], interp_inds
 
 # Aliases included for backwards compatibility.
