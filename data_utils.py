@@ -11,7 +11,7 @@ import scipy
 from matplotlib import pyplot as plt
 from matplotlib.colors import Normalize
 import matplotlib.cm as cm
-from data_binning import *
+from helper_functions import *
 # from data_prep import DataPrep
 
 freqarr_default, freqstep = np.linspace(0,250,4096,retstep=True)
@@ -211,7 +211,7 @@ def waterfall_alldays(data,lst,freqarr=freqarr_default,minfreq=30,maxfreq=200,mi
     for i in range(n_days):
         
         # 2. Bin each day into 1h bins.
-        lst_split_bins, data_split_binned, _  = lst_binning(data_split[i],lst_split[i],binsize=minperbin)
+        data_split_binned, lst_split_bins, _  = lst_binning(data_split[i],lst_split[i],binsize=minperbin)
         
         # 3. For each 1h for this day, plot data as a function of frequency.
         FFplot, LSTplot = np.meshgrid(freqarr[minfreqarg:maxfreqarg],lst_split_bins)
