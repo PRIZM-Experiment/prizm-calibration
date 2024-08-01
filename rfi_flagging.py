@@ -51,7 +51,7 @@ class RFI_flagging:
             binsize (int): binsize in minutes for LST binning
             thresh (int): multiple of MAD for flagging threshold
         '''
-        lst_binned, data_binned, bin_inds = lst_binning(self.data, self.lst, binsize, method='median')
+        data_binned, lst_binned, bin_inds = lst_binning(self.data, self.lst, binsize, method='median')
         MAD = np.array([np.median(np.abs(data_binned[i] - self.data[bin_inds==i]), \
                                                    axis=0) for i in range(len(lst_binned))])
         MAD = median_filter(MAD, size=100)
