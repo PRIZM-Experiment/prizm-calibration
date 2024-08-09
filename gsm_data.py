@@ -6,13 +6,13 @@ from pygdsm import GlobalSkyModel16, HaslamSkyModel, LowFrequencySkyModel
 
 class GSMData:
 
-    def __init__(self, instrument, channel, min_per_bin, horizon=[], site_latitude=-46.88694, nside=256):
+    def __init__(self, instrument, channel, min_per_bin, horizon=[], site_latitude=-46.88694, incline_S=0, incline_E=0, ant_orientation=0, nside=256):
         self.min_per_bin = min_per_bin
         self.instrument = instrument
         self.channel = channel
         self.nside = nside
-        self.beam_dict = self.get_beam_dict()
-        self.healpy_beam = self.get_healpy_beam(site_latitude)
+        self.beam_dict = self.get_beam_dict(ant_orientation)
+        self.healpy_beam = self.get_healpy_beam(site_latitude, incline_S, incline_E)
         self.healpy_horizon = self.get_healpy_horizon(horizon, site_latitude)
         self.gsm_data = None
 
@@ -20,7 +20,7 @@ class GSMData:
         self.get_GSM_temps(model='GSM16', beta=None, saved_maps=saved_maps).align_GSMdata(zerobin)
         return self.gsm_data
 
-    def get_beam_dict(self):
+    def get_beam_dict(self, ant_orientation):
         """ 
         Returns dictionary containing beam patterns retrieved from data files.
         Dictionary entrys are labeled by frequency, and are a phi x theta grid.
@@ -57,6 +57,7 @@ class GSMData:
 
         # Extracts the spherial coordinates `theta` and `phi` stored in
         # `beam_sim_data` and converts their units from degrees to radians.
+        # coordinates have resolution 2 degrees, theta [0,360] and phi [0,90]
         theta = np.unique(beam_sim_data[:, 0]) * np.pi / 180
         phi = np.unique(beam_sim_data[:, 1]) * np.pi / 180
 
@@ -67,6 +68,16 @@ class GSMData:
         # Stores spherical coordinates in `beam_dict`.
         beam_dict['theta'] = theta
         beam_dict['phi'] = phi
+        
+        # index for rotation of beam
+        if ant_orientation < 0:
+            # ensure angle is positive, rotate in degrees E from N
+            ant_orientation += 360
+        if self.channel == 'EW':
+            rot_phi = ant_orientation // 2
+        elif self.channel == 'NS':
+            # beam file is oriented EW. rotate in phi 90 degrees
+            rot_phi = ant_orientation // 2 + 45
 
         # Stores the beam profile for each frequency in `beam_dict`.
         for index, entry in enumerate(frequencies):
@@ -75,6 +86,8 @@ class GSMData:
             # correspond to the beam for different frequencies.
             reshaped_beam_sim = np.reshape(beam_sim_data[:, index],
                                            [len(phi), len(theta)])
+                
+            reshaped_beam_sim = np.concatenate((reshaped_beam_sim[rot_phi:-1], reshaped_beam_sim[:rot_phi], reshaped_beam_sim[rot_phi,None]), axis=0)
 
             # Stores the reshaped beam in `beam_dict` under the appropriate
             # frequency key.
@@ -83,7 +96,7 @@ class GSMData:
         # Returns the beam information in a dictionary format.
         return beam_dict
 
-    def get_healpy_beam(self, site_latitude):
+    def get_healpy_beam(self, site_latitude, incline_S, incline_E):
         # Initializes the dictionary which will hold the HealPy version of the beam.
         healpy_beam_dict = {}
 
@@ -141,12 +154,16 @@ class GSMData:
 
             # Rotates (euler rotation in ZYX) and stores the the HealPy beam in the `healpy_beam_dict` under
             # the appropriate frequency entry.
-            if self.channel == 'NS':
-                beam_rotation = healpy.rotator.Rotator([90, 90 - site_latitude, 0])
-            if self.channel == 'EW':
-                beam_rotation = healpy.rotator.Rotator([0, 90 - site_latitude, 0])
-            healpy_beam = beam_rotation.rotate_map_pixel(healpy_beam / beam_norms[i])
-            healpy_beam_dict[frequency] = healpy_beam
+#             if self.channel == 'NS':
+#                 beam_rotation = healpy.rotator.Rotator([90, 90 - site_latitude, 0])
+#             if self.channel == 'EW':
+#                 beam_rotation = healpy.rotator.Rotator([0, 90 - site_latitude, 0])
+#             healpy_beam = beam_rotation.rotate_map_pixel(healpy_beam / beam_norms[i])
+            r = healpy.Rotator(deg=True, rot=[incline_E, incline_S - 90 + site_latitude])
+            theta_rot, phi_rot = r(healpy_theta, healpy_phi)
+            healpy_beam = healpy.get_interp_val(healpy_beam, theta_rot, phi_rot, nest=False)
+
+            healpy_beam_dict[frequency] = healpy_beam / beam_norms[i]
 
         # Adds the beam normalizations as a separate entry in `heapy_beam_dict`.
         healpy_beam_dict['normalization'] = beam_norms

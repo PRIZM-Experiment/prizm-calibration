@@ -1,10 +1,4 @@
 import sys
-from data import Data
-
-import sys
-from data import Data
-
-import sys
 from data import Data # note the 'data' variable in this file is NOT the data module (which is not explicitly imported), it is an instance of the Data class
 import numpy as np
 
@@ -24,36 +18,38 @@ class DataPrep:
         self.data = self.prep_data()
         
         # Get raw antenna spectra
-        self.antenna = self.get_antenna_data(self.data)
+#         self.antenna = self.get_antenna_data(self.data)
         self.lst = self.get_lst_time(self.data)
         self.systime = self.get_sys_time(self.data)
         
-        # Get the raw calibrator spectra
-        self.shorts_data = self.get_shorts_data(self.data)
-        self.shorts_data_lst = self.get_shorts_lst_time(self.data)
-        self.shorts_data_systime = self.get_shorts_sys_time(self.data)
+#         # Get the raw calibrator spectra
+#         self.shorts_data = self.get_shorts_data(self.data)
+#         self.shorts_data_lst = self.get_shorts_lst_time(self.data)
+#         self.shorts_data_systime = self.get_shorts_sys_time(self.data)
         
-        self.res50_data = self.get_res50_data(self.data)
-        self.res50_data_lst = self.get_res50_lst_time(self.data)
-        self.res50_data_systime = self.get_res50_sys_time(self.data)
+#         self.res50_data = self.get_res50_data(self.data)
+#         self.res50_data_lst = self.get_res50_lst_time(self.data)
+#         self.res50_data_systime = self.get_res50_sys_time(self.data)
         
-        self.res100_data = self.get_res100_data(self.data)
-        self.res100_data_lst = self.get_res100_lst_time(self.data)
-        self.res100_data_systime = self.get_res100_sys_time(self.data)
+#         self.res100_data = self.get_res100_data(self.data)
+#         self.res100_data_lst = self.get_res100_lst_time(self.data)
+#         self.res100_data_systime = self.get_res100_sys_time(self.data)
         
-        self.noise = self.get_noise(self.data)
+#         self.noise_data = self.get_res100_data(self.data)
+#         self.noise_data_lst = self.get_res100_lst_time(self.data)
+#         self.noise_data_systime = self.get_res100_sys_time(self.data)
         
-        '''UNDER DEVELOPMENT'''
-        # Generate a mask of bad/outlier calibrator spectra
-        self.calib_mask_dict = {'short':self.flag_calibrator_data(self.shorts_data,'short'),
-                                'res50':self.flag_calibrator_data(self.res50_data,'res50'),
-                                'res100':self.flag_calibrator_data(self.res100_data,'res100')}
+#         '''UNDER DEVELOPMENT'''
+#         # Generate a mask of bad/outlier calibrator spectra
+#         self.calib_mask_dict = {'short':self.flag_calibrator_data(self.shorts_data,'short'),
+#                                 'res50':self.flag_calibrator_data(self.res50_data,'res50'),
+#                                 'res100':self.flag_calibrator_data(self.res100_data,'res100')}
         
-        # Flag bad spectra, then do interpolation
-        # self.calib_mask_dict is retrieved within get_shorts (or res50, res100 equiv.)
-        self.shorts = self.get_shorts(self.data)
-        self.res50 = self.get_res50(self.data)
-        self.res100 = self.get_res100(self.data)
+#         # Flag bad spectra, then do interpolation
+#         # self.calib_mask_dict is retrieved within get_shorts (or res50, res100 equiv.)
+#         self.shorts = self.get_shorts(self.data)
+#         self.res50 = self.get_res50(self.data)
+#         self.res100 = self.get_res100(self.data)
     
     def __call__(self, calibration_type='GSM'):
         return self.get_data_product(calibration_type), self.lst, self.systime
@@ -81,8 +77,13 @@ class DataPrep:
             if self.channel == 'EW': self.channel = 'NS'
             else: self.channel = 'EW'
         
+        if self.instrument == '100MHz':
+            coordinates = ('37.820028d', '-46.887222')
+        elif self.instrument == '70MHz':
+            coordinates = ('37.819194d', '-46.887139d')
+        
         data.partition(instruments=[self.instrument], channels=[self.channel], buffer=(1,1))
-        data.lst(instruments=[self.instrument], channels=[self.channel])
+        data.lst(instruments=[self.instrument], channels=[self.channel], location=coordinates)
         return data
 
     def get_antenna_data(self, data):
@@ -184,14 +185,21 @@ class DataPrep:
     
     
     # ---------------------- Noise ----------------------------------#
-    def get_noise(self, data):
-        return data.interpolate(times=data.get(data='time_sys_start',
-                                               instrument=self.instrument,
-                                               channel=self.channel,
-                                               partition='antenna'),
-                                instrument=self.instrument,
-                                channel=self.channel,
-                                partition='noise', threshold=5000)
+    def get_noise_lst_time(self, data):
+        # Returns the LST times at which 100 Ohm calibrator spectra are taken
+        start = data.get(data='lst_sys_start', instrument=self.instrument, channel=self.channel, partition='noise')
+        stop = data.get(data='lst_sys_stop', instrument=self.instrument, channel=self.channel, partition='noise')
+        return (start + stop) / 2
+    
+    def get_noise_sys_time(self, data):
+        # Returns the LST times at which 100 Ohm calibrator spectra are taken
+        start = data.get(data='time_sys_start', instrument=self.instrument, channel=self.channel, partition='noise')
+        stop = data.get(data='time_sys_stop', instrument=self.instrument, channel=self.channel, partition='noise')
+        return (start + stop) / 2
+    
+    def get_noise_data(self, data):
+        # Saves only the measured spectra, *without* interpolating over antenna times
+        return data.get(data='pol', instrument=self.instrument, channel=self.channel, partition='noise')
     
     # ---------------------------- Calibration Functions ------------------------- #
     
