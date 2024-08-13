@@ -222,6 +222,10 @@ def interpolate(self, times, calib_mask, instrument='100MHz', channel='EW', part
             continue
 
         # Interpolates.
+#         # For testing purposes:
+#         if abs(time-12) < 0.1:
+#             print("Sel1 times:",x[selection[0]].mean(),"Sel2 times:",x[selection[1]].mean())
+#         # ----------------------
         interpolation[index,:] = _interpolant((x[selection[0]].mean(), y[selection[0]].mean(axis=0), x[selection[1]].mean(), y[selection[1]].mean(axis=0), time))
 
     return interpolation

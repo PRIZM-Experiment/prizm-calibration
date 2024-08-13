@@ -100,7 +100,7 @@ class DataPrep:
                                 calib_mask=self.calib_mask_dict['short'],
                                 instrument=self.instrument,
                                 channel=self.channel,
-                                partition='short', threshold=5000)
+                                partition='short', threshold=3600*24) # set to 24h for testing purposes
     
     def get_shorts_lst_time(self, data):
         # Returns the LST times at which short calibrator spectra are taken
@@ -236,7 +236,7 @@ class DataPrep:
         Parameters
         ----------
         partition: which cleaned calibrator data to return; 'short', 'res50', or 'res100'.
-        return_flagged: set to 'True' to only the bad/outlier calibrator data.
+        return_flagged: set to 'True' to return only the bad/outlier calibrator data.
         '''
         calib_list = {'short': [self.shorts_data_lst,self.shorts_data],
                      'res50': [self.res50_data_lst,self.res50_data],
