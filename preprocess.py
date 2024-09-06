@@ -8,6 +8,7 @@ class Preprocess:
             self.data = np.load(f)
         with open(path2file + 'lst' + file_ending, 'rb') as f:
             self.lst = np.load(f)
+        # Should not be using systime
         with open(path2file + 'systime' + file_ending, 'rb') as f:
             self.systime = np.load(f)
 
