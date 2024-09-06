@@ -7,6 +7,7 @@ class RFI_flagging:
         self.data = data
         self.lst = lst
         self.freq = freq
+        # should not use systime
         self.systime = systime
     
     def __call__(self, hpass, lpass, binsize, thresh1, window, thresh2, template, \
