@@ -11,13 +11,38 @@ def make_acf(dat,t,dt,tmax):
     for i in range(nn):
         for j in range(i+1,nn):
             delt=np.abs(t[i]-t[j])
-            k=int(delt/dt)
+            k=int(delt/dt) 
             if k<n:
                 tot[k]=tot[k]+dat[i]*dat[j]
                 wt[k]=wt[k]+1
             else:
                 break
     return tot,wt
+
+def make_acf_alt(dat,t,dt,tmax):
+    n=int(tmax/dt)
+    tot=np.zeros(n)
+    wt=np.zeros(n)
+    nn=len(dat)
+    for i in range(nn):
+        # used to be range(i+1,nn) below, changed for testing
+        for j in range(i,nn):
+            delt=np.abs(t[i]-t[j])
+            k=int(delt/dt)  # this is the change
+            if k<n:
+                tot[k]=tot[k]+dat[i]*dat[j]
+                wt[k]=wt[k]+1
+            else:
+                break
+    return tot,wt
+
+def make_acf_v3(dat,t,dt,tmax):
+    
+    
+    
+    
+    
+    return
 
 plt.ion()
 
