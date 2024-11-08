@@ -5,40 +5,41 @@
 import numpy as np
 import scipy
 from matplotlib import pyplot as plt
-import copy
-from scipy.signal import find_peaks
+# import copy
+# import time
 
 # Custom modules
-import data
-import data_prep
-try:
-    reload(data) # dependent module (imported in data_prep)
-    reload(data_prep)
-    from data_prep import DataPrep
-except:
-    from importlib import reload
-    reload(data) # dependent module (imported in data_prep)
-    reload(data_prep)
-    from data_prep import DataPrep
+# import data
+# import data_prep
+# try:
+#     reload(data) # dependent module (imported in data_prep)
+#     reload(data_prep)
+#     from data_prep import DataPrep
+# except:
+#     from importlib import reload
+#     reload(data) # dependent module (imported in data_prep)
+#     reload(data_prep)
+#     from data_prep import DataPrep
 
-from helper_functions import *
-import data_utils as du
+# from helper_functions import *
+# import data_utils as du
 
-try:
-    reload(test_short_interp)
-    from test_short_interp import make_acf, make_acf_alt
-except:
-    import test_short_interp
-    reload(test_short_interp)
-    from test_short_interp import make_acf, make_acf_alt
+# try:
+#     reload(test_short_interp)
+#     from test_short_interp import make_acf, make_acf_alt
+# except:
+#     import test_short_interp
+#     reload(test_short_interp)
+#     from test_short_interp import make_acf, make_acf_alt
 '''---------------------------------------------------------------------'''
 
 ''' Frequency range ------------------------------------------'''
+# Standard for PRIZM data
 freqarr, freqstep = np.linspace(0,250,4096,retstep=True) # Based on number of frequency channels of the antenna
-minfreq = 70 # for testing
-maxfreq = 90 # for testing
-minfreqarg = int(minfreq/freqstep)
-maxfreqarg = int(maxfreq/freqstep)
+# minfreq = 70 # for testing
+# maxfreq = 90 # for testing
+# minfreqarg = int(minfreq/freqstep)
+# maxfreqarg = int(maxfreq/freqstep)
 '''-------------------------------------------------------------'''
 
 '''Fitting functions -------------------------------------------'''
@@ -65,14 +66,14 @@ def delta_function(x, location=0, amplitude=0, width=1):
 '''-------------------------------------------------------------'''
 
 
-
-
 ''' CLASS DEFINITION '''
 class Kriging:
-    def __init__(self,systime,data,interp_times,tmax_mask=np.nan,tmin_mask=np.nan):
+    def __init__(self,systime,data,interp_times,tmax_mask=np.nan,tmin_mask=np.nan,minfreq=0,maxfreq=250):
         self.data = data
         self.time = systime
         self.interp_times = interp_times
+        self.minfreq = minfreq
+        self.maxfreq = maxfreq
         
         # If tmin_mask and tmax_mask are specified then apply a mask (means we're only selecting a subset of the data)
         if (tmax_mask != np.nan) & (tmin_mask != np.nan):
@@ -94,32 +95,43 @@ class Kriging:
         dtmax: Maximum (cutoff) dt of the ACF used for Kriging. Default 2x86400 seconds (48 hours).
         acf_functype: 'linear' or 'exponential', default 'linear'. Defines what model will be used to fit the ACF.
         '''
+        
+        minfreqarg = int(self.minfreq/freqstep)
+        maxfreqarg = int(self.maxfreq/freqstep)
+        
         self.interp_data = np.zeros( shape=(len(freqarr[minfreqarg:maxfreqarg]),len(self.interp_times)) )
         self.interp_std = np.zeros( shape=(len(freqarr[minfreqarg:maxfreqarg]),len(self.interp_times)) )
         
         # We have to do the interpolation one frequency channel at a time
         for i,freq in enumerate(freqarr[minfreqarg:maxfreqarg]):
-            if i == 1: break # for testing, we break after 1 freq channel
+            #if i == 1: break # for testing, we break after 1 freq channel
             
             # Compute the ACF from data
             freq_index = int(freq/freqstep)
             tot,wt = self.make_acf(self.data[:,freq_index]-self.data[:,freq_index].mean(),self.time,dt,tmax)
-            mm=wt>30 # mask ACF entries with insignificant weights?
+            mm=wt>170 # mask ACF entries with less significant weights to get rid of noisy outliers
             self.acf_tvec = np.arange(len(tot))[mm]*dt
             self.acf = tot[mm]/wt[mm]
             
             # Smooth the ACF, overwrite ACF values/times with smoothed values
-            self.acf_tvec, self.acf = self.smooth_acf(tvec=self.acf_tvec,acf=self.acf)
+            self.acf_tvec, self.acf, self.acf_std = self.smooth_acf(tvec=self.acf_tvec,acf=self.acf,cycle_jump=5*60)
             
             # Fit the ACF from dt=0 to dt=dtmax
             self.acf_func = self.fit_acf(tvec=self.acf_tvec,acf=self.acf,dtmax=dtmax,functype=acf_functype)
+            
+            '''Here I change what data gets used for the weighted sum'''
+            # Average the time series data taken within 1 calibration cycle before doing the weighted sum
+            self.avgd_time, self.avgd_data, self.avgd_data_std = self.smooth_acf(self.time,self.data[:,freq_index],cycle_jump=5*60,isACF=False) 
+            # NOTE: the smooth_acf function can just be used as a general averaging function, so here ^ I'm using it to average the time series data (NOT the ACF)
             
             # Perform Kriging for all antenna times for the current frequency channel
             for j, tt_interp in enumerate(self.interp_times):
                 
                 # Compute the covariance matrix for the current antenna time, and perform interpolation
-                self.CMatrix, self.interp_data[i,j],self.interp_std[i,j] = self.compute_covariance_and_krig(dat=self.data[:,freq_index],t=self.time, dtmax=dtmax,interp_time=tt_interp,ACF_func=self.acf_func)
-                
+                '''Using averaged time series data for the weighted sum'''
+                self.CMatrix, self.interp_data[i,j],self.interp_std[i,j] = self.compute_covariance_and_krig(dat=self.avgd_data,t=self.avgd_time, dtmax=dtmax,interp_time=tt_interp,ACF_func=self.acf_func)
+            
+            print(freq,'MHz channel done')
     
         
     def make_acf(self,dat,t,dt,tmax):
@@ -149,36 +161,45 @@ class Kriging:
         return tot,wt
     
     
-    def smooth_acf(self,tvec,acf,cycle_jump=60):
+    def smooth_acf(self,tvec,acf,cycle_jump=60,isACF=True):
         '''Function to smooth the ACF data by averaging ACF values obtained from calibrator data taken in a single calibrator measurement cycle, while conserving the dt=0 peak due to measurement noise. This translates to averaging data taken in close succession (~a few seconds time gap). Larger timegaps (e.g. order 0.5-1h) separate measurement cycles. We look for large peaks in the timegaps between subsequent data to separate into measurement cycles.
         
         Parameters
         -----------
         cycle_jump: Minimum timegape between subsequent measurements to separate them into two different measurement cycles, in seconds. Default 60 seconds.
+        isACF: set to False if using this function for general averaging of another time of (non-ACF) dataset. Default True.
         
         
         '''
         # Separate the current dt values into bins within a few minutes of each other, I think this normally corresponds to data taken during the same rotation through calibrators before going back to antenna
         
-        time_values = tvec[1:] # we only smooth for dt>0
-        acf_values = acf[1:] # "     "      "
-        zerobin = acf[0] # save the zero-bin
+        if isACF == True:
+            time_values = tvec[1:] # we only smooth for dt>0
+            acf_values = acf[1:] # "     "      "
+            zerobin = acf[0] # save the zero-bin
+        else:
+            time_values = tvec
+            acf_values = acf
+            
         tsteps = np.diff(time_values)
 
         # Create bin edges based on big jumps in the timestep between subsequent measurements
-        bins = find_peaks(tsteps,height=cycle_jump)[0] # bin edges, minimum jump for separate cycle set to 60 by default
-
+        #bins = find_peaks(tsteps,height=cycle_jump)[0] 
+        bins = np.where(tsteps>cycle_jump)[0] # bin edges, minimum jump for separate cycle set to 60 by default
+        
         # Split data into the bins
         bin_tgroups = np.split(time_values,bins+1,axis=0)
         bin_acf_groups = np.split(acf_values,bins+1,axis=0)
         
         t_binavg = []
         acf_binavg = []
+        acf_binstd = []
         #largest_binwidth = 0 # for testing
 
         for i in range(len(bin_tgroups)):
             t_binavg.append(np.mean(bin_tgroups[i]))
             acf_binavg.append(np.mean(bin_acf_groups[i]))
+            acf_binstd.append(np.std(bin_acf_groups[i]))
             # Code below is for testing
 #             if (bin_tgroups[i][-1]-bin_tgroups[i][0]) > 5*60:
 #                 print('bin larger than 5 minutes:',bin_tgroups[i][-1]-bin_tgroups[i][0])
@@ -190,10 +211,16 @@ class Kriging:
 #         print(largest_bini)
 
         # Add the dt=0 datapoint back in post-smoothing
-        smoothed_times = np.concatenate(([0],t_binavg))
-        smoothed_acf = np.concatenate(([zerobin],acf_binavg))
+        if isACF == True:
+            smoothed_times = np.concatenate(([0],t_binavg))
+            smoothed_acf = np.concatenate(([zerobin],acf_binavg))
+            smoothed_std = np.concatenate(([0],acf_binstd)) # here we assume the dt=0 value is exact
+        else:
+            smoothed_times = np.array(t_binavg)
+            smoothed_acf = np.array(acf_binavg)
+            smoothed_std = np.array(acf_binstd)
         
-        return smoothed_times, smoothed_acf
+        return smoothed_times, smoothed_acf, smoothed_std
     
     
     def fit_acf(self,tvec,acf,dtmax=2*86400,functype='quadpeak'):
@@ -216,7 +243,7 @@ class Kriging:
             zeropeak_height = abs(acf[0] - acf[1])
 
             def ACF_func(dt):
-                return polyfunc(dt) + delta_function(dt)
+                return polyfunc(dt) + delta_function(dt,amplitude=zeropeak_height)
         
         elif functype == 'linear':
             fit_func = linfunc
@@ -248,6 +275,10 @@ class Kriging:
         # Making a matrix with only the data within dtmax/2 of the interp time, to insure we only use up to dtmax of the ACF.
         d_red = dat[abs(t - interp_time) < dtmax/2] 
         t_red = t[abs(t - interp_time) < dtmax/2]
+        
+        # this line skips interp_times that are not within dtmax/2 of the measured data
+        if len(t_red) == 0: return np.nan, np.nan, np.nan 
+        
         d = np.append(d_red,0)
         tarr = np.append(t_red,interp_time)
         C = np.zeros(shape=(len(d),len(d))) # initialize the covariance matrix
@@ -259,6 +290,7 @@ class Kriging:
 
             C[i,:] = ACF_func(dtij_arr/3600) # ACF_func is defined for dt in hours
          
+        C += 1e20
         
         # Invert the covariance matrix
         Cinv = np.linalg.inv(C)
