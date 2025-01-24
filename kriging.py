@@ -68,12 +68,46 @@ def delta_function(x, location=0, amplitude=0, width=1):
 
 ''' CLASS DEFINITION '''
 class Kriging:
-    def __init__(self,systime,data,interp_times,tmax_mask=np.nan,tmin_mask=np.nan,minfreq=0,maxfreq=250):
+    def __init__(self,systime,data,interp_times,tmax_mask=np.nan,tmin_mask=np.nan,
+                 minfreq=None,maxfreq=None,minfreqarg=None,maxfreqarg=None):
+        '''
+        Specify only one of these pairs of parameters: (minfreq,maxfreq) and (minfreqarg,maxfreqarg).
+        
+        Parameters:
+        ------------
+        systime: raw UNIX timestamp of the calibrator data timeseries, in seconds. Shape is 1D.
+        data: raw calibrator ADC power at each systime and for each frequency channel. Shape is 2D: (time,frequency).
+        interp_times: antenna times at which to interpolate the calibrator data, in seconds.
+        tmax_mask: upper time limit for both the systime and the interp_times.
+        tmin_mask: lower time limit for both the systime and the interp_times.
+        minfreq: minimum frequency (in MHz) for which to compute interpolation.
+        maxfreq: maximum frequency (in MHz) for which to compute interpolation.
+        minfreqarg: minimum frequency channel (=index) for which to compute interpolation.
+        maxfreqarg: maximum frequency channel (=index) for which to compute interpolation.
+        '''
         self.data = data
         self.time = systime
         self.interp_times = interp_times
-        self.minfreq = minfreq
-        self.maxfreq = maxfreq
+        
+        if minfreq != None and maxfreq != None and minfreqarg == None and maxfreqarg == None:
+            self.minfreq = minfreq
+            self.minfreqarg = int(self.minfreq/freqstep)
+            self.maxfreq = maxfreq
+            self.maxfreqarg = int(self.maxfreq/freqstep)
+            
+        elif minfreq == None and maxfreq == None and minfreqarg != None and maxfreqarg != None:
+            self.minfreqarg = minfreqarg
+            self.minfreq = freqarr[self.minfreqarg]
+            self.maxfreqarg = maxfreqarg
+            self.maxfreq = freqarr[self.maxfreqarg]
+        
+        elif minfreq == None and maxfreq == None and minfreqarg == None and maxfreqarg == None:
+            self.minfreqarg = 0
+            self.minfreq = 0 # MHz
+            self.maxfreqarg = 4095
+            self.maxfreq = 250 # MHz
+            
+        else: raise ValueError('User must specify *either* min and max frequencies in MHz (minfreq, maxfreq), *or* min and max frequency channel number (minfreqarg, maxfreqarg). If neither is specified, the full frequency range is assumed.')
         
         # If tmin_mask and tmax_mask are specified then apply a mask (means we're only selecting a subset of the data)
         if (tmax_mask != np.nan) & (tmin_mask != np.nan):
@@ -84,7 +118,7 @@ class Kriging:
             self.interp_times = self.interp_times[tmask_ant]
     
     
-    def __call__(self,dt=5,tmax=2*86400,dtmax=2*86400,acf_functype='linear'):
+    def __call__(self,dt=5,tmax=2*86400,dtmax=2*86400,acf_functype='quadpeak'):
         '''
         When called, the class computes the ACF, and computes the interpolation at every interp_time.
         
@@ -93,23 +127,22 @@ class Kriging:
         dt: timescale step for computation of the ACF. Default 5 seconds (<typical smallest timegap between measurements(6-7s)).
         tmax: Maximum timescale for calculation of ACF. In seconds. Default 2x86400 seconds (48 hours).
         dtmax: Maximum (cutoff) dt of the ACF used for Kriging. Default 2x86400 seconds (48 hours).
-        acf_functype: 'linear' or 'exponential', default 'linear'. Defines what model will be used to fit the ACF.
+        acf_functype: 'linear', 'exponential', 'polyfit' (degree 4 polynomial), or 'quadpeak' (quadratic fit for dt>0, with added spike). Default quadpeak.
         '''
         
-        minfreqarg = int(self.minfreq/freqstep)
-        maxfreqarg = int(self.maxfreq/freqstep)
+        print('Verifying freq args are the same within kriging object: min', self.minfreqarg, ', max', self.maxfreqarg)
         
-        self.interp_data = np.zeros( shape=(len(freqarr[minfreqarg:maxfreqarg]),len(self.interp_times)) )
-        self.interp_std = np.zeros( shape=(len(freqarr[minfreqarg:maxfreqarg]),len(self.interp_times)) )
+        self.interp_data = np.zeros( shape=(len(freqarr[self.minfreqarg:self.maxfreqarg+1]),len(self.interp_times)) )
+        self.interp_std = np.zeros( shape=(len(freqarr[self.minfreqarg:self.maxfreqarg+1]),len(self.interp_times)) )
         
         # We have to do the interpolation one frequency channel at a time
-        for i,freq in enumerate(freqarr[minfreqarg:maxfreqarg]):
+        for i,freq in enumerate(freqarr[self.minfreqarg:self.maxfreqarg+1]):
             #if i == 1: break # for testing, we break after 1 freq channel
             
             # Compute the ACF from data
             freq_index = int(freq/freqstep)
             tot,wt = self.make_acf(self.data[:,freq_index]-self.data[:,freq_index].mean(),self.time,dt,tmax)
-            mm=wt>170 # mask ACF entries with less significant weights to get rid of noisy outliers
+            mm=wt>0.10*len(self.time) # mask ACF entries with less significant weights (<10% of number of datapoints) to get rid of noisy outliers
             self.acf_tvec = np.arange(len(tot))[mm]*dt
             self.acf = tot[mm]/wt[mm]
             
@@ -117,12 +150,27 @@ class Kriging:
             self.acf_tvec, self.acf, self.acf_std = self.smooth_acf(tvec=self.acf_tvec,acf=self.acf,cycle_jump=5*60)
             
             # Fit the ACF from dt=0 to dt=dtmax
-            self.acf_func = self.fit_acf(tvec=self.acf_tvec,acf=self.acf,dtmax=dtmax,functype=acf_functype)
+            self.acf_func = self.fit_acf(tvec=self.acf_tvec,acf=self.acf,acf_err=self.acf_std,dtmax=dtmax,functype=acf_functype)
             
             '''Here I change what data gets used for the weighted sum'''
             # Average the time series data taken within 1 calibration cycle before doing the weighted sum
-            self.avgd_time, self.avgd_data, self.avgd_data_std = self.smooth_acf(self.time,self.data[:,freq_index],cycle_jump=5*60,isACF=False) 
+            self.avgd_time, self.avgd_data, self.avgd_data_std = self.smooth_acf(self.time,self.data[:,freq_index],cycle_jump=5*60,isACF=False)
             # NOTE: the smooth_acf function can just be used as a general averaging function, so here ^ I'm using it to average the time series data (NOT the ACF)
+            
+            if i == 0:
+                # First time around, initialized the matrices to save the averaged data.
+                self.save_avgd_time = np.zeros( shape=(len(freqarr[self.minfreqarg:self.maxfreqarg+1]),
+                                                       len(self.avgd_time)) )
+                #self.save_avgd_time = self.avgd_time # normally, the time is the same for every freq channel
+                self.save_avgd_data = np.zeros( shape=(len(freqarr[self.minfreqarg:self.maxfreqarg+1]),
+                                                       len(self.avgd_data)) )
+                self.save_avgd_data_std = np.zeros( shape=(len(freqarr[self.minfreqarg:self.maxfreqarg+1]),
+                                                           len(self.avgd_data_std)) )
+
+            # After the matrices are initialized, save current array to the matrix.
+            self.save_avgd_time[i] = self.avgd_time
+            self.save_avgd_data[i] = self.avgd_data
+            self.save_avgd_data_std[i] = self.avgd_data_std
             
             # Perform Kriging for all antenna times for the current frequency channel
             for j, tt_interp in enumerate(self.interp_times):
@@ -223,7 +271,7 @@ class Kriging:
         return smoothed_times, smoothed_acf, smoothed_std
     
     
-    def fit_acf(self,tvec,acf,dtmax=2*86400,functype='quadpeak'):
+    def fit_acf(self,tvec,acf,acf_err,dtmax=2*86400,functype='quadpeak'):
         '''Function to fit the given ACF to either a linear or exponential model. These simplistic models are only meant
         to approximate the early part of the ACF (<dtmax), and should not be used to model the full ACF.
         
@@ -231,13 +279,15 @@ class Kriging:
         -----------
         tvec: array of timescales dt at which the ACF is computed. In seconds.
         acf: value of the ACF at each dt in tvec.
+        acf_err: error on the ACF at each dt in tvec.
         dtmax: Maximum (cutoff) dt of the ACF used for Kriging. Default 2x86400 seconds (48 hours).
-        functype: 'linear', 'exponential', 'polyfit' (degree 4 polynomial), or 'quadpeak' (quadratic fit for dt>0, with added spike
+        functype: 'linear', 'exponential', 'polyfit' (degree 4 polynomial), or 'quadpeak' (quadratic fit for dt>0, with added spike).
         of the height of ACF at dt=0). Default 'quadpeak'. Defines what model will be used to fit the ACF.
         '''
         if functype == 'quadpeak':
             # Quadratic for 0<dt<dtmax + dt=0 peak height
-            c = np.polyfit(x=tvec[(0<tvec)&(tvec<dtmax)]/3600,y=acf[(0<tvec)&(tvec<dtmax)],deg=2)
+            c, cov = np.polyfit(x=tvec[(0<tvec)&(tvec<dtmax)]/3600,y=acf[(0<tvec)&(tvec<dtmax)],w=1/acf_err[(0<tvec)&(tvec<dtmax)],deg=2,cov=True)
+            c_errs = np.diag(cov)**(1/2) # errors on the fit coefficients, for now not used for anything
             polyfunc = np.poly1d(c)
 
             zeropeak_height = abs(acf[0] - acf[1])
@@ -265,11 +315,11 @@ class Kriging:
         
         Parameters
         -----------
-        dat:
-        t:
-        dtmax:
-        interp_time:
-        ACF_func:
+        dat: raw ADC power data to interpolate.
+        t: raw UNIX timestamp time for each dat, in seconds.
+        dtmax: Maximum (cutoff) dt of the ACF used for Kriging. Default 2x86400 seconds (48 hours).
+        interp_time: antenna times at which to interpolate dat, in seconds.
+        ACF_func: function modelling the ACF of dat, fit for at least 0<=dt<=dtmax. Takes dt input in **hours**.
         '''
         
         # Making a matrix with only the data within dtmax/2 of the interp time, to insure we only use up to dtmax of the ACF.

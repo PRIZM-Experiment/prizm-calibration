@@ -28,21 +28,13 @@ def make_acf_alt(dat,t,dt,tmax):
         # used to be range(i+1,nn) below, changed for testing
         for j in range(i,nn):
             delt=np.abs(t[i]-t[j])
-            k=int(delt/dt)  # this is the change
+            k=int(delt/dt)  # this is the change (? I guess I removed the change)
             if k<n:
                 tot[k]=tot[k]+dat[i]*dat[j]
                 wt[k]=wt[k]+1
             else:
                 break
     return tot,wt
-
-def make_acf_v3(dat,t,dt,tmax):
-    
-    
-    
-    
-    
-    return
 
 plt.ion()
 

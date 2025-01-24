@@ -11,6 +11,9 @@ import scipy
 from matplotlib import pyplot as plt
 from matplotlib.colors import Normalize
 import matplotlib.cm as cm
+from importlib import reload
+import helper_functions
+reload(helper_functions)
 from helper_functions import *
 # from data_prep import DataPrep
 
@@ -158,6 +161,27 @@ def LST_days_split(lst,data):
     return lst_split, data_split
 
 
+# Modified lst binning function for waterfall plotting convenience and aesthetics
+def lst_binning_hth(data, lst, binsize, method='mean'): 
+    '''Similar to lst_binning() in helper_functions.py, but creates bins with edges starting at 0 and ending at 24.
+    
+    For example, with lst_binning(), setting binsize=60 mins makes bin edges at [0.5,1.5,2.5,...23.5], which leads to weird waterfall plotting behaviour for lst<0.5h or lst>23.5h.
+    With lst_binning_hth(), setting binsize=60 mins makes bin edges at [0,1,2,3,...23,24].
+    
+    **This function is intended for use when plotting data for different days separately.**'''
+    binsize /= 60
+    lst_bin_edges = np.arange(0, 24+binsize, binsize)
+    lst_bin_centers = np.arange(0+binsize/2, 24+binsize/2, binsize)
+    
+    bin_inds = np.digitize(lst, bins=lst_bin_edges)
+    #bin_inds[np.where(bin_inds == len(lst_bin_edges))[0]] = 24
+    if method == 'mean':
+        data_binned = np.array([np.nanmean(data[bin_inds == i], axis=0) for i in range(1,len(lst_bin_centers)+1)])   
+    elif method == 'median':
+        data_binned = np.array([np.nanmedian(data[bin_inds == i], axis=0) for i in range(1,len(lst_centers)+1)])   
+    return data_binned, lst_bin_centers, bin_inds
+
+
 # ------------------------------------------------------------------------------------ #
 def waterfall_alldays(data,lst,freqarr=freqarr_default,minfreq=30,maxfreq=200,minperbin=60,year='?',instrument='?',channel='?',source='?'):
     '''
@@ -211,7 +235,7 @@ def waterfall_alldays(data,lst,freqarr=freqarr_default,minfreq=30,maxfreq=200,mi
     for i in range(n_days):
         
         # 2. Bin each day into 1h bins.
-        data_split_binned, lst_split_bins, _  = lst_binning(data_split[i],lst_split[i],binsize=minperbin)
+        lst_binning_hth(data_split[i],lst_split[i],binsize=minperbin)
         
         # 3. For each 1h for this day, plot data as a function of frequency.
         FFplot, LSTplot = np.meshgrid(freqarr[minfreqarg:maxfreqarg],lst_split_bins)
